@@ -1,9 +1,0 @@
-<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>داش بورد 1</title></head>
-<body><h1>استقبال الطلبات</h1><div id="orders"></div>
-<script>
-setInterval(async()=>{
-  let res = await fetch('/api/orders/new');
-  let orders = await res.json();
-  ordersDiv.innerHTML = orders.map(o=>`<p>${o.id} - ${o.customer_name}</p>`).join('')
-}, 3000);
-</script></body></html>
