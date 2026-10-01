@@ -93,4 +93,7 @@ tables.forEach(table => {
   })
 })
 
-app.listen(3001, () => console.log('API REAL DB + FOLDERS READY on 3001'))
+module.exports = app;
+if (require.main === module) {
+  app.listen(3001, () => console.log('API REAL DB + FOLDERS READY on 3001'))
+}
