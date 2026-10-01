@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
-const API = 'http://localhost:3001/api'
-
+const API = '/api'
 export default function App() {
   const [clients, setClients] = useState([])
   const [products, setProducts] = useState([])
