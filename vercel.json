@@ -1,1 +1,8 @@
-
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/(.*)", "destination": "/web/dist/$1" }
+  ],
+  "buildCommand": "cd web && npm install && npm run build",
+  "outputDirectory": "web/dist"
+}
