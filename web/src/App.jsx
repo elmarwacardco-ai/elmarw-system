@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react'
 const API = '/api'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const TOKEN_KEY = 'elmarw_admin_access_token'
+
+async function apiRead(resource, token) {
+  const response = await fetch(`${API}/${resource}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  if (!Array.isArray(body)) throw new Error(`Invalid ${resource} response`)
+  return body
+}
+
 export default function App() {
   const [clients, setClients] = useState([])
   const [products, setProducts] = useState([])
@@ -50,21 +64,41 @@ export default function App() {
   const folderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم']
   const paymentMethods = ['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل']
 
-  const loadAll = async () => {
+  const [loadError, setLoadError] = useState('')
+  const [adminBusy, setAdminBusy] = useState(false)
+
+  const loadAll = async (token = sessionStorage.getItem(TOKEN_KEY)) => {
+    if (!token) return
     try {
-      const [c, cat, sub, prod, ord, fold] = await Promise.all([
-        fetch(`${API}/clients`).then(r=>r.json()),
-        fetch(`${API}/categories`).then(r=>r.json()),
-        fetch(`${API}/subcategories`).then(r=>r.json()),
-        fetch(`${API}/products`).then(r=>r.json()),
-        fetch(`${API}/orders`).then(r=>r.json()),
-        fetch(`${API}/folders`).then(r=>r.json()).catch(()=>[]),
-      ])
-      setClients(c||[]); setCategories(cat||[]); setSubCategories(sub||[]); setProducts(prod||[]); setOrders(ord||[]); setFolders(fold||[]);
-      try{ const emp = await fetch(`${API}/employees`).then(r=>r.json()); setEmployees(emp||[]) }catch{ setEmployees([]) }
-    } catch(e){ console.log(e) }
+      const [c, cat, sub, prod, ord, fold, emp] = await Promise.all([
+        'clients', 'categories', 'subcategories', 'products',
+        'orders', 'folders', 'employees'
+      ].map(key => apiRead(key, token)))
+      setClients(c); setCategories(cat); setSubCategories(sub)
+      setProducts(prod); setOrders(ord); setFolders(fold); setEmployees(emp)
+      setLoadError('')
+    } catch (error) {
+      setLoadError(error.message)
+      console.error('Data loading failed:', error)
+    }
   }
-  useEffect(() => { loadAll(); const lc = localStorage.getItem('loggedClient'); if(lc){ try{ setLoggedClient(JSON.parse(lc)) }catch{} } const nt = localStorage.getItem('notifications'); if(nt){ try{ setNotifications(JSON.parse(nt)) }catch{} } }, [])
+
+  useEffect(() => {
+    // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
+    const token = sessionStorage.getItem(TOKEN_KEY)
+    if (token) {
+      apiRead('categories', token).then(() => {
+        setLoggedEmployee({ name: 'المدير العام', permissions: {
+          dashboard: true, employees: true, categories: true,
+          products: true, clients: true, orders: true, shipping: true
+        } })
+        setShowAdmin(true)
+        loadAll(token)
+      }).catch(() => sessionStorage.removeItem(TOKEN_KEY))
+    }
+    const nt = localStorage.getItem('notifications')
+    if (nt) { try { setNotifications(JSON.parse(nt)) } catch {} }
+  }, [])
   useEffect(() => { if(loggedClient) localStorage.setItem('loggedClient', JSON.stringify(loggedClient)) }, [loggedClient])
   useEffect(() => { localStorage.setItem('notifications', JSON.stringify(notifications)) }, [notifications])
 
@@ -111,7 +145,39 @@ export default function App() {
   const myUnread = notifications.filter(n=> { if(!loggedClient) return false; return (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,'')) &&!n.read })
   const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(form.phone.length!==11){ alert('الموبايل لازم 11 رقم'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } await fetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); alert('تم التسجيل ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); loadAll() }
   const handleLogin = () => { const c = clients.find(x => String(x.phone) === String(login.phone) && x.pass === login.pass); if(c){ setLoggedClient(c); setShowLogin(false); setLogin({phone:'', pass:''}) } else { alert('بيانات غلط ❌\n\nلو نسيت الباسورد برجاء التواصل مع خدمة العملاء\n📞 01000000000') } }
-  const handleAdminLogin = () => { const u = String(adminLogin.user).trim(); const p = String(adminLogin.pass).trim(); if(u === 'admin' && p === 'admin123'){ setLoggedEmployee({ name: 'المدير العام', pass: 'admin123', permissions: { dashboard: true, employees: true, categories: true, products: true, clients: true, orders: true, shipping: true } }); setShowAdmin(true); setShowAdminLogin(false); setAdminLogin({user:'',pass:''}); return } const cleanUser = u.replace(/\D/g,''); const emp = employees.find(e => String(e.phone).replace(/\D/g,'').trim() === cleanUser && String(e.pass).trim() === p); if(emp){ setLoggedEmployee(emp); setShowAdmin(true); setShowAdminLogin(false); setAdminLogin({user:'',pass:''}) } else { alert('بيانات الموظف غلط ❌\nالموجود: '+employees.map(e=> e.phone+' / '+e.pass).join(' | ')) } }
+  const handleAdminLogin = async () => {
+    const email = adminLogin.user.trim()
+    const password = adminLogin.pass
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      alert('إعدادات Supabase العامة غير متاحة. راجع Vercel وأعد النشر.')
+      return
+    }
+    if (!email || !password) { alert('اكتب الإيميل وكلمة المرور'); return }
+    setAdminBusy(true)
+    try {
+      const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+        body: JSON.stringify({ email, password })
+      })
+      const auth = await response.json()
+      if (!response.ok || !auth.access_token) throw new Error('الإيميل أو كلمة المرور غير صحيحة')
+      // التحقق من عضوية admin_users يتم على السيرفر فقط
+      await apiRead('categories', auth.access_token)
+      sessionStorage.setItem(TOKEN_KEY, auth.access_token)
+      setLoggedEmployee({ name: 'المدير العام', permissions: {
+        dashboard: true, employees: true, categories: true,
+        products: true, clients: true, orders: true, shipping: true
+      } })
+      setShowAdmin(true)
+      setShowAdminLogin(false)
+      setAdminLogin({ user: '', pass: '' })
+      await loadAll(auth.access_token)
+    } catch (error) {
+      sessionStorage.removeItem(TOKEN_KEY)
+      alert('تعذر دخول المدير: ' + error.message)
+    } finally { setAdminBusy(false) }
+  }
   const addToCart = (product, qty) => {
     if(!loggedClient){ setShowLogin(true); return }
     let pB = product.pricesB; let pV = product.pricesVIP;
@@ -162,7 +228,7 @@ export default function App() {
     loadAll();
   }
   const handleRemoveOrderFromFolder = async (folderId, orderId) => { const f = folders.find(x=> x.id===folderId); const newIds = (f.orderIds||[]).filter(id=> Number(id)!==Number(orderId)); await fetch(`${API}/folders/${folderId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({orderIds: newIds})}); loadAll() }
-  const handleDeleteFolder = async (folder) => { const enteredPass = String(deletePass).trim(); const empPass = String(loggedEmployee?.pass||'').trim(); const isAdmin = enteredPass === 'admin123' || enteredPass === empPass; if(!isAdmin){ alert('باسورد التأكيد غلط ❌'); return } await fetch(`${API}/folders/${folder.id}`, {method:'DELETE'}); setShowDeleteConfirm(null); setDeletePass(''); loadAll() }
+  const handleDeleteFolder = async (folder) => { const enteredPass = String(deletePass).trim(); const empPass = String(loggedEmployee?.pass||'').trim(); const isAdmin = Boolean(sessionStorage.getItem(TOKEN_KEY)); if(!isAdmin){ alert('باسورد التأكيد غلط ❌'); return } await fetch(`${API}/folders/${folder.id}`, {method:'DELETE'}); setShowDeleteConfirm(null); setDeletePass(''); loadAll() }
 
   const ProductCard = ({ product }) => (
     <div style={{ background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
@@ -257,7 +323,7 @@ export default function App() {
         <div className="admin-sidebar" style={{ width: '260px', background: '#0f172a', color: 'white', padding: '20px 10px', position:'sticky', top:0, height:'100vh', overflowY:'auto', boxSizing:'border-box' }}>
           <h3 style={{textAlign: 'center'}}>المروة ✅ - {loggedEmployee?.name}</h3>
           {(() => { let perms = loggedEmployee?.permissions; try{ if(typeof perms==='string') perms=JSON.parse(perms) }catch{}; const isAdmin = loggedEmployee?.name === 'المدير العام'; const can = (k) => isAdmin ||!!perms?.[k]; return (<div className="admin-menu">{can('dashboard') && <button onClick={()=> setAdminTab('dashboard')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='dashboard'?'#1e40af':'transparent', color:'white'}}>📊 تحكم</button>}{can('orders') && <button onClick={()=> setAdminTab('orders')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='orders'?'#1e40af':'transparent', color:'white'}}>📦 اوردرات ({orders.length})</button>}{can('shipping') && <button onClick={()=> setAdminTab('operation')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='operation'?'#16a34a':'transparent', color:'white', fontWeight:'bold'}}>⚙️ التشغيل ({folders.length} فولدر)</button>}{can('orders') && <><button onClick={()=> setAdminTab('accounts')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='accounts'?'#0ea5e9':'transparent', color:'white', fontWeight:'bold'}}>💰 الحسابات</button><button onClick={()=> setAdminTab('deliveryAccounts')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='deliveryAccounts'?'#475569':'transparent', color:'white', fontWeight:'bold'}}>🚚 حسابات التسليمات</button></>}{can('clients') && <button onClick={()=> setAdminTab('clients')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='clients'?'#1e40af':'transparent', color:'white'}}>👥 عملاء ({clients.length})</button>}{can('categories') && <button onClick={()=> setAdminTab('categories')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='categories'?'#1e40af':'transparent', color:'white'}}>📁 تصنيفات</button>}{can('products') && <button onClick={()=> setAdminTab('products')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='products'?'#1e40af':'transparent', color:'white'}}>🏷️ منتجات ({products.length})</button>}{can('employees') && <button onClick={()=> setAdminTab('employees')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='employees'?'#f59e0b':'#334155', color:'white', fontWeight:'bold'}}>👷 موظفين ({employees.length})</button>}</div>)})()}
-          <button onClick={() => {setShowAdmin(false); setLoggedEmployee(null)}} style={{...btnStyle, background: '#ef4444', color: 'white', width:'100%', marginTop:'20px'}}>🚪 خروج للرئيسية</button>
+          <button onClick={() => {sessionStorage.removeItem(TOKEN_KEY); setShowAdmin(false); setLoggedEmployee(null); setClients([]); setOrders([]); setEmployees([]); setFolders([])}} style={{...btnStyle, background: '#ef4444', color: 'white', width:'100%', marginTop:'20px'}}>🚪 خروج للرئيسية</button>
         </div>
         <div className="admin-main" style={{ flex: 1, padding: '15px', minWidth:0 }}>
           {adminTab==='dashboard' && <div><div style={{display:'flex', justifyContent:'space-between'}}><h2>لوحة التحكم</h2><button onClick={()=> setShowAdmin(false)} style={{...btnStyle, background:'#0f172a', color:'white'}}>🌐 الرئيسية</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'15px', marginTop:'15px'}}><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>👥 عملاء: {clients.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>📦 اوردرات: {orders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>⚙️ فولدرات: {folders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>🏷️ منتجات: {products.length}</div></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'12px', marginTop:'15px'}}>{orderStatuses.map(s=> <div key={s} style={{background:'white', padding:'12px', borderRadius:'10px', borderRight:`5px solid ${statusColor(s)}`}}>{s}: {orders.filter(o=> o.status===s).length}</div>)}</div></div>}
@@ -344,6 +410,7 @@ export default function App() {
         </div>
       </div>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
+      {loadError && <div style={{padding:'12px',background:'#fee2e2',color:'#991b1b',direction:'rtl'}}>تعذر تحميل البيانات: {loadError}</div>}
       <div style={{ padding: '20px', background: '#f5f7fa', minHeight: '80vh' }}>
         {!selectedSub && <>{categories.map(cat => { const catSubs = subCategories.filter(s => Number(s.categoryId) === Number(cat.id)); if(catSubs.length===0) return null; return (<div key={cat.id} style={{marginBottom: '24px'}}><h3 style={{ color: '#1e40af', fontSize:'20px', marginBottom:'10px' }}>{cat.name}</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>{catSubs.map(sub => (<div key={sub.id} onClick={() => setSelectedSub(sub)} style={{ background: 'white', borderRadius: '14px', overflow: 'hidden', cursor: 'pointer', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', border:'1px solid #dbeafe' }}>{sub.image? <img src={sub.image} style={{width: '100%', height: '130px', objectFit: 'cover'}}/> : <div style={{height:'130px', background:'#f1f5f9', display:'flex', alignItems:'center', justifyContent:'center'}}>بدون صورة</div>}<div style={{padding: '10px', textAlign: 'center', fontWeight: 'bold', color:'#1e3a8a'}}>{sub.name}</div></div>))}</div></div>) })}<div style={{marginTop:'18px'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}><h2 style={{margin:0,color:'#0f172a'}}>🛍️ كل المنتجات</h2><span style={{background:'#dbeafe',color:'#1e40af',padding:'5px 10px',borderRadius:'15px',fontSize:'12px',fontWeight:'bold'}}>{products.length} منتج</span></div><div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:'14px' }}>{products.map(p=><ProductCard key={p.id} product={p}/>)}</div>{products.length===0&&<div style={{background:'white',padding:'30px',borderRadius:'12px',textAlign:'center'}}>لا توجد منتجات حالياً</div>}</div></>}
         {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
@@ -388,7 +455,7 @@ export default function App() {
       {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
       {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
       {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
-      {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول الإدارة والموظفين</h3><input placeholder="موبايل الموظف او admin" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin}>دخول</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
+      {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول المدير عبر Supabase</h3><input placeholder="البريد الإلكتروني للمدير" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin} disabled={adminBusy}>{adminBusy ? 'جاري التحقق...' : 'دخول'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
     </div>
   )
 }
