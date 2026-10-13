@@ -94,18 +94,29 @@ export default function App() {
 
   const loadAll = async (token = sessionStorage.getItem(TOKEN_KEY)) => {
     if (!token) return
-    try {
-      const [c, cat, sub, prod, ord, fold, emp] = await Promise.all([
-        'clients', 'categories', 'subcategories', 'products',
-        'orders', 'folders', 'employees'
-      ].map(key => apiRead(key, token)))
-      setClients(c); setCategories(cat); setSubCategories(sub)
-      setProducts(prod); setOrders(ord); setFolders(fold); setEmployees(emp)
-      setLoadError('')
-    } catch (error) {
-      setLoadError(error.message)
-      console.error('Data loading failed:', error)
-    }
+
+    const resources = [
+      'clients', 'categories', 'subcategories',
+      'products', 'orders', 'folders', 'employees'
+    ]
+    const setters = [
+      setClients, setCategories, setSubCategories,
+      setProducts, setOrders, setFolders, setEmployees
+    ]
+
+    const results = await Promise.allSettled(
+      resources.map(key => apiRead(key, token))
+    )
+    const errors = []
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        setters[index](result.value)
+      } else {
+        console.error(`Failed to load ${resources[index]}:`, result.reason)
+        errors.push(resources[index])
+      }
+    })
+    setLoadError(errors.length ? `تعذر تحميل: ${errors.join(', ')}` : '')
   }
 
   useEffect(() => {
