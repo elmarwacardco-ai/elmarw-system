@@ -29,24 +29,47 @@ function getDatabase() {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Allow', 'GET, HEAD, OPTIONS');
   res.setHeader('Vary', 'Authorization');
+  res.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
 
-  if (!['GET', 'HEAD'].includes(req.method)) {
+  if (!['GET', 'HEAD', 'POST'].includes(req.method)) {
     return res.status(405).json({
-      error: 'Write operations are not enabled yet'
+      error: 'Method not allowed'
     });
   }
 
   try {
+    const pathname = new URL(
+      req.url,
+      `https://${req.headers.host}`
+    ).pathname;
+
+    const key = pathname
+      .replace(/^\/api\/?/, '')
+      .split('/')[0] || 'categories';
+
+    if (!allowedKeys.has(key)) {
+      return res.status(404).json({
+        error: 'Unknown resource'
+      });
+    }
+
+    // السماح بإضافة التصنيفات الرئيسية فقط
+    if (req.method === 'POST' && key !== 'categories') {
+      return res.status(405).json({
+        error: 'Write operations are not enabled for this resource'
+      });
+    }
+
     const db = getDatabase();
 
-    const authorization = req.headers.authorization || '';
-    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    const match = String(
+      req.headers.authorization || ''
+    ).match(/^Bearer\s+(.+)$/i);
 
     if (!match) {
       return res.status(401).json({
@@ -54,7 +77,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // التحقق من هوية المستخدم
+    // التحقق من جلسة المستخدم
     const { data: authData, error: authError } =
       await db.auth.getUser(match[1]);
 
@@ -64,7 +87,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // التحقق من صلاحيات المدير
+    // التأكد من صلاحيات المدير
     const { data: admin, error: adminError } = await db
       .from('admin_users')
       .select('user_id')
@@ -84,23 +107,42 @@ export default async function handler(req, res) {
       });
     }
 
-    // تحديد القسم المطلوب
-    const pathname = new URL(
-      req.url,
-      `https://${req.headers.host}`
-    ).pathname;
+    // حفظ تصنيف رئيسي
+    if (req.method === 'POST') {
+      const body = typeof req.body === 'string'
+        ? JSON.parse(req.body)
+        : req.body;
 
-    const key = pathname
-      .replace(/^\/api\/?/, '')
-      .split('/')[0] || 'categories';
+      const name = typeof body?.name === 'string'
+        ? body.name.trim()
+        : '';
 
-    if (!allowedKeys.has(key)) {
-      return res.status(404).json({
-        error: 'Unknown resource'
-      });
+      if (!name || name.length > 120) {
+        return res.status(400).json({
+          error: 'Category name must be 1 to 120 characters'
+        });
+      }
+
+      const { data: created, error: createError } =
+        await db.rpc('append_main_category', {
+          p_name: name
+        });
+
+      if (createError) {
+        console.error(
+          'Category insert failed:',
+          createError.message
+        );
+
+        return res.status(500).json({
+          error: 'Could not save category; check database function'
+        });
+      }
+
+      return res.status(201).json(created);
     }
 
-    // قراءة البيانات من app_data
+    // تحميل البيانات
     const { data: record, error: readError } = await db
       .from('app_data')
       .select('data')
