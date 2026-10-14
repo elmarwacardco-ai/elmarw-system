@@ -79,7 +79,7 @@ async function getIdentity(db, req) {
   if (lookupError) throw lookupError;
   return { id: data.user.id, isAdmin: Boolean(admin) };
 }
-function publicView(key, values) {
+export function publicView(key, values) {
   if (key === 'products') return values.map(product => ({
     id: product.id, name: product.name, image: product.image || '',
     categoryId: product.categoryId, subCategoryId: product.subCategoryId,
@@ -96,7 +96,7 @@ function withoutLegacyPassword(record) {
   const { pass, password, ...safe } = record;
   return safe;
 }
-function adminView(resource, items) {
+export function adminView(resource, items) {
   return ['clients','employees'].includes(resource)
     ? items.map(withoutLegacyPassword)
     : items;
