@@ -1,6 +1,7 @@
 import { randomUUID, randomInt } from 'node:crypto';
 
 const BUCKET = 'elmarwa-orders';
+const PAYMENT_BUCKET = 'elmarwa-payment-proofs';
 const MAX_FILE = 2 * 1024 * 1024;
 const PHONE = /^01\d{9}$/;
 const QTY = new Set([1000,2000,3000,4000,5000,6000,7000,8000,9000,10000]);
@@ -74,6 +75,18 @@ function checkPdf(input) {
   }
   return bytes;
 }
+function checkPaymentImage(value) {
+  if (typeof value !== 'string' || value.length > 1_400_000) throw new Error('الصورة أكبر من الحد المسموح');
+  const match = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match) throw new Error('ارفع صورة PNG أو JPEG');
+  const bytes = Buffer.from(match[2], 'base64');
+  const png = bytes.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'));
+  const jpg = bytes.subarray(0,3).equals(Buffer.from('ffd8ff','hex'));
+  if (bytes.length > 1024 * 1024 || !bytes.length || (match[1] === 'image/png' ? !png : !jpg)) {
+    throw new Error('صورة إثبات الدفع غير صالحة أو أكبر من 1 ميجابايت');
+  }
+  return {bytes,mime:match[1],extension:png?'png':'jpg'};
+}
 function validLines(lines, products, tier) {
   if (!Array.isArray(lines) || !lines.length || lines.length > 30) throw new Error('السلة غير صحيحة');
   return lines.map((line, i) => {
@@ -144,7 +157,7 @@ export async function handleCustomerRequest(req, res, db) {
 
     const actor = await identity(db, req);
     if (!actor) return respond(res, 401, 'سجّل الدخول أولاً');
-    if (action === 'file' && req.method === 'GET' && /^\d+$/.test(fileOrderId || '')) {
+    if (['file','proof'].includes(action) && req.method === 'GET' && /^\d+$/.test(fileOrderId || '')) {
       let permitted = Boolean(actor.client);
       if (!permitted) {
         const { data, error } = await db.from('admin_users')
@@ -157,8 +170,10 @@ export async function handleCustomerRequest(req, res, db) {
       if (!order || (actor.client && String(order.clientId) !== String(actor.client.id))) {
         return respond(res, 404, 'الملف غير متاح');
       }
-      if (!order.filePath) return respond(res, 404, 'الملف غير متاح');
-      const { data, error } = await db.storage.from(BUCKET).createSignedUrl(order.filePath, 60, { download: true });
+      const path = action === 'file' ? order.filePath : order.paymentProofPath;
+      const bucket = action === 'file' ? BUCKET : PAYMENT_BUCKET;
+      if (!path) return respond(res, 404, 'الملف غير متاح');
+      const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 60, {download: true});
       if (error) throw error;
       return res.status(200).json({ url: data.signedUrl });
     }
@@ -179,6 +194,28 @@ export async function handleCustomerRequest(req, res, db) {
     if (action === 'orders' && req.method === 'GET') {
       const orders = (actor.snapshot.orders || []).filter(o => String(o.clientId) === String(actor.client.id));
       return res.status(200).json(orders);
+    }
+    if (action === 'payment-proof' && req.method === 'POST' && /^\d+$/.test(fileOrderId || '')) {
+      const order = (actor.snapshot.orders || []).find(o =>
+        String(o.id) === fileOrderId && String(o.clientId) === String(actor.client.id)
+      );
+      if (!order) return respond(res, 404, 'الطلب غير موجود');
+      const image = checkPaymentImage(parse(req).fileData);
+      const path = actor.user.id + '/' + randomUUID() + '.' + image.extension;
+      const { error: uploadError } = await db.storage.from(PAYMENT_BUCKET).upload(path, image.bytes, {
+        contentType: image.mime, upsert: false, cacheControl: '0'
+      });
+      if (uploadError) return respond(res, 503, 'تعذر رفع إثبات الدفع');
+      try {
+        const updated = await mutate(db, 'orders','PUT',Number(fileOrderId), {
+          paymentProof: 'صورة التحويل مرفوعة',
+          paymentProofPath: path
+        });
+        return res.status(200).json(updated);
+      } catch (error) {
+        await db.storage.from(PAYMENT_BUCKET).remove([path]).catch(() => null);
+        throw error;
+      }
     }
     if (action === 'orders' && req.method === 'POST') {
       const body = parse(req);
@@ -225,7 +262,10 @@ export async function handleCustomerRequest(req, res, db) {
       'ملف PDF غير صالح أو أكبر من 2 ميجابايت',
       'السلة غير صحيحة',
       'منتج أو كمية غير صالحة',
-      'السعر غير متاح لهذه الكمية'
+      'السعر غير متاح لهذه الكمية',
+      'الصورة أكبر من الحد المسموح',
+      'ارفع صورة PNG أو JPEG',
+      'صورة إثبات الدفع غير صالحة أو أكبر من 1 ميجابايت'
     ].includes(error.message)) return respond(res, 400, error.message);
     if (error.message === 'Invalid request') return respond(res, 400, 'Invalid JSON request');
     return respond(res, 500, 'تعذر إتمام العملية');
