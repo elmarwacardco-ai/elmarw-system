@@ -6,6 +6,10 @@ const TOKEN_KEY = 'elmarw_admin_access_token'
 const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
 const CAPTCHA_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
 const USE_DIRECT_PDF_UPLOAD = import.meta.env.VITE_ENABLE_DIRECT_PDF_UPLOAD === 'true'
+// Never insert customer-controlled text directly into print-window HTML.
+const escapeStickerHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+}[char]))
 async function apiFetch(url, options = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY)
   const headers = new Headers(options.headers || {})
@@ -272,6 +276,7 @@ export default function App() {
 
   const printSticker = (o) => {
     const w = window.open('', '_blank', 'width=400,height=250');
+    if (!w) { alert('اسمح بفتح نافذة الطباعة من المتصفح'); return }
     w.document.write(`
       <html dir="rtl"><head><style>
         @page { size: 4cm 2cm; margin: 0; }
@@ -280,10 +285,10 @@ export default function App() {
        .serial { font-size:10pt; text-align:center; font-weight:900; letter-spacing:1px; }
        .small { font-size:6pt; color:#333; }
       </style></head><body>
-        <div class="serial">#${o.serialNumber || o.id}</div>
-        <div class="row"><span>العميل:</span><span>${o.clientName}</span></div>
-        <div class="row small"><span>تنفيذ:</span><span>${o.executionDate || '-'}</span><span>جاهز:</span><span>${o.readyDate || '-'}</span></div>
-        <div class="row small"><span>${o.date||''}</span><span>${o.total||0}ج</span></div>
+        <div class="serial">#${escapeStickerHtml(o.serialNumber || o.id)}</div>
+        <div class="row"><span>العميل:</span><span>${escapeStickerHtml(o.clientName)}</span></div>
+        <div class="row small"><span>تنفيذ:</span><span>${escapeStickerHtml(o.executionDate || '-')}</span><span>جاهز:</span><span>${escapeStickerHtml(o.readyDate || '-')}</span></div>
+        <div class="row small"><span>${escapeStickerHtml(o.date||'')}</span><span>${escapeStickerHtml(o.total||0)}ج</span></div>
         <script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500)}</script>
       </body></html>
     `);
@@ -536,7 +541,33 @@ export default function App() {
     loadAll();
   }
   const handleRemoveOrderFromFolder = async (folderId, orderId) => { const f = folders.find(x=> x.id===folderId); const newIds = (f.orderIds||[]).filter(id=> Number(id)!==Number(orderId)); await apiFetch(`${API}/folders/${folderId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({orderIds: newIds})}); loadAll() }
-  const handleDeleteFolder = async (folder) => { const enteredPass = String(deletePass).trim(); const empPass = String(loggedEmployee?.pass||'').trim(); const isAdmin = Boolean(sessionStorage.getItem(TOKEN_KEY)); if(!isAdmin){ alert('باسورد التأكيد غلط ❌'); return } await apiFetch(`${API}/folders/${folder.id}`, {method:'DELETE'}); setShowDeleteConfirm(null); setDeletePass(''); loadAll() }
+  const handleDeleteFolder = async (folder) => {
+    const token = sessionStorage.getItem(TOKEN_KEY)
+    if (!token || !SUPABASE_URL || !SUPABASE_KEY || !deletePass) {
+      alert('لازم تكون داخل كمدير وتكتب كلمة مرورك للتأكيد')
+      return
+    }
+    try {
+      // Verify the currently signed-in admin's password again before deleting.
+      const authHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` }
+      const profileResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: authHeaders })
+      const profile = await profileResponse.json().catch(() => ({}))
+      if (!profileResponse.ok || !profile?.id || !profile?.email) throw new Error('جلسة المدير غير صالحة')
+      const verifyResponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', apikey:SUPABASE_KEY },
+        body:JSON.stringify({ email:profile.email, password:deletePass })
+      })
+      const verified = await verifyResponse.json().catch(() => ({}))
+      if (!verifyResponse.ok || verified?.user?.id !== profile.id) throw new Error('كلمة مرور المدير غير صحيحة')
+      await apiFetch(`${API}/folders/${folder.id}`, {method:'DELETE'})
+      setShowDeleteConfirm(null)
+      setDeletePass('')
+      await loadAll()
+    } catch (error) {
+      alert('تعذر حذف الفولدر: ' + error.message)
+    }
+  }
 
   const catalogVisible = products.filter(product => {
     const q = catalogSearch.trim().toLocaleLowerCase('ar-EG')
@@ -769,6 +800,16 @@ export default function App() {
           {adminTab==='products' && <div><div style={{display:'flex', justifyContent:'space-between'}}><button onClick={()=> setShowProductForm(true)} style={{...btnStyle, background:'#16a34a', color:'white'}}>+ منتج جديد</button><button onClick={()=> setShowAdmin(false)} style={{...btnStyle, background:'#0f172a', color:'white'}}>🌐 الرئيسية</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'10px', marginTop:'10px'}}>{products.map(p=> <div key={p.id} style={{background:'white', padding:'12px', borderRadius:'8px', display:'flex', gap:'10px', alignItems:'center'}}><div style={{width:'50px', height:'50px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{p.image? <img src={p.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><div style={{flex:1}}><div style={{fontWeight:'bold'}}>{p.name}</div><button onClick={()=> handleEditProduct(p)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'11px', marginTop:'4px'}}>✏️ تعديل</button></div></div>)}</div></div>}
           {adminTab==='employees' && (<div><div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}><h2>👷 الموظفين</h2><div><button onClick={()=> { setEmployeeForm({ id: null, name: '', phone: '', pass: '', permissions: { dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } }); setShowEmployeeForm(true)}} style={{...btnStyle, background:'#1e40af', color:'white'}}>+ اضافة</button><button onClick={()=> setShowAdmin(false)} style={{...btnStyle, background:'#0f172a', color:'white'}}>🌐 الرئيسية</button></div></div><div style={{background:'white', padding:'15px', borderRadius:'12px', marginTop:'10px'}}>{employees.map(e=> { let pr = e.permissions; try{ if(typeof pr==='string') pr=JSON.parse(pr) }catch{}; return (<div key={e.id} style={{padding:'12px', borderBottom:'1px solid #eee', display:'flex', justifyContent:'space-between', alignItems:'center'}}><div><b>{e.name}</b> - 📞 {e.phone}<br/><small style={{color:'#666'}}>صلاحيات: {pr? Object.keys(pr).filter(k=> pr[k]).join(', ') : ''}</small></div><div><button onClick={()=> { setEmployeeForm({ id: e.id, name: e.name, phone: e.phone, pass: e.pass, permissions: pr||{ dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } }); setShowEmployeeForm(true)}} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>تعديل</button><button onClick={async()=>{ if(confirm('حذف '+e.name+' ؟')){ await apiFetch(`${API}/employees/${e.id}`, {method:'DELETE'}); loadAll()}}} style={{...btnStyle, background:'#ef4444', color:'white', fontSize:'12px'}}>حذف</button></div></div>)})}</div></div>)}
         </div>
+        {showDeleteConfirm !== null && <div role="dialog" aria-modal="true" aria-label="تأكيد حذف الفولدر" style={{position:'fixed',inset:0,background:'rgba(15,23,42,.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600,padding:'16px'}}>
+          <div style={{background:'white',padding:'22px',borderRadius:'14px',width:'100%',maxWidth:'410px'}}>
+            <h3 style={{color:'#b91c1c',marginTop:0}}>🗑️ حذف الفولدر</h3>
+            <p>أنت على وشك حذف فولدر <b>{folders.find(f=>String(f.id)===String(showDeleteConfirm))?.name || ''}</b>. العملية لا يمكن التراجع عنها.</p>
+            <label htmlFor="confirm-folder-password" style={{fontWeight:800,fontSize:'13px'}}>أدخل كلمة مرور المدير للتأكيد</label>
+            <input id="confirm-folder-password" type="password" autoComplete="current-password" value={deletePass} onChange={e=>setDeletePass(e.target.value)} style={inputStyle}/>
+            <button disabled={!deletePass} onClick={()=>{const folder=folders.find(f=>String(f.id)===String(showDeleteConfirm));if(folder)handleDeleteFolder(folder)}} style={{...btnStyle,background:'#b91c1c',color:'white',width:'100%',opacity:deletePass?1:.6}}>تأكيد الحذف</button>
+            <button onClick={()=>{setShowDeleteConfirm(null);setDeletePass('')}} style={{...btnStyle,background:'#64748b',color:'white',width:'100%'}}>إلغاء</button>
+          </div>
+        </div>}
         {showCategoryForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'350px'}}><h3>تصنيف رئيسي</h3><input placeholder="اسم التصنيف" value={categoryForm.name} onChange={e=> setCategoryForm({...categoryForm, name:e.target.value})} style={inputStyle}/><button onClick={saveCategory} disabled={categoryBusy} style={{...btnStyle, background:'#f59e0b', color:'white', width:'100%'}}>حفظ</button><button onClick={()=> setShowCategoryForm(false)} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
         {showSubCategoryForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'350px'}}><h3>تصنيف فرعي</h3><select value={subCategoryForm.categoryId} onChange={e=> setSubCategoryForm({...subCategoryForm, categoryId: e.target.value})} style={inputStyle}><option value="">اختر الرئيسي</option>{categories.map(c=> <option key={c.id} value={String(c.id)}>{c.name}</option>)}</select><input placeholder="اسم الفرعي" value={subCategoryForm.name} onChange={e=> setSubCategoryForm({...subCategoryForm, name:e.target.value})} style={inputStyle}/><button onClick={async()=> {if(!subCategoryForm.name ||!subCategoryForm.categoryId) return; await apiFetch(`${API}/subcategories`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name: subCategoryForm.name, categoryId: Number(subCategoryForm.categoryId)})}); setShowSubCategoryForm(false); setSubCategoryForm({name:'', categoryId:'', image:'', id:null}); loadAll()}} style={{...btnStyle, background:'#8b5cf6', color:'white', width:'100%'}}>حفظ</button><button onClick={()=> setShowSubCategoryForm(false)} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
         {showProductForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'500px', maxHeight:'90vh', overflowY:'auto'}}><h3>{productForm.id? 'تعديل منتج':'منتج جديد'}</h3><input placeholder="اسم المنتج" value={productForm.name} onChange={e=> setProductForm({...productForm, name:e.target.value})} style={inputStyle}/><input placeholder="رابط الصورة (اختياري)" value={productForm.image} onChange={e=> setProductForm({...productForm, image:e.target.value})} style={inputStyle}/><select value={productForm.subCategoryId} onChange={e=> setProductForm({...productForm, subCategoryId: e.target.value})} style={inputStyle}><option value="">اختر الفرعي</option>{subCategories.map(s=> <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select><div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}><div><b style={{color:'#1e3a8a'}}>💰 B</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesB[q]||''} onChange={e=> setProductForm({...productForm, pricesB:{...productForm.pricesB, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div><div><b style={{color:'#f59e0b'}}>⭐ VIP</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesVIP[q]||''} onChange={e=> setProductForm({...productForm, pricesVIP:{...productForm.pricesVIP, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div></div><button onClick={async()=> { const nb={}; const nv={}; quantities.forEach(q=>{nb[q]=Number(productForm.pricesB[q])||0; nv[q]=Number(productForm.pricesVIP[q])||0}); const payload={name: productForm.name, image: productForm.image, subCategoryId: productForm.subCategoryId? Number(productForm.subCategoryId):null, pricesB: nb, pricesVIP: nv}; if(productForm.id){ await apiFetch(`${API}/products/${productForm.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}) } else { await apiFetch(`${API}/products`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}) } setShowProductForm(false); setProductForm({ name: '', categoryId: '', subCategoryId: '', image: '', id: null, pricesB: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}, pricesVIP: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''} }); loadAll()}} style={{...btnStyle, background:'#16a34a', color:'white', width:'100%'}}>💾 حفظ</button><button onClick={()=> setShowProductForm(false)} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
