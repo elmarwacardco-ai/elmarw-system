@@ -77,7 +77,7 @@ test('invalid PDF is rejected before order creation', async () => {
     items:[{productId:9,qty:1000}], fileName:'bad.pdf',
     fileData:'data:application/pdf;base64,'+Buffer.from('not a pdf').toString('base64')
   });
-  assert.equal(res.code,500);
+  assert.equal(res.code,400);
   assert.equal(db.getSaved(),null);
 });
 test('unverified signup stays disabled by default', async () => {
