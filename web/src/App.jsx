@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const TOKEN_KEY = 'elmarw_admin_access_token'
 const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
+const CAPTCHA_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
 async function apiFetch(url, options = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY)
   const headers = new Headers(options.headers || {})
@@ -74,6 +75,11 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('dashboard')
   const [ordersStatusFilter, setOrdersStatusFilter] = useState('الكل')
   const [showForm, setShowForm] = useState(false)
+  const [showVerifyForm, setShowVerifyForm] = useState(false)
+  const [verificationPhone, setVerificationPhone] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const turnstileRef = useRef(null)
   const [showLogin, setShowLogin] = useState(false)
   const [showAdminLogin, setShowAdminLogin] = useState(false)
   const [showCategoryForm, setShowCategoryForm] = useState(false)
@@ -163,6 +169,45 @@ export default function App() {
     })
     setLoadError(errors.length ? `تعذر تحميل: ${errors.join(', ')}` : '')
   }
+
+  useEffect(() => {
+    if (!showForm || !CAPTCHA_SITE_KEY || !turnstileRef.current) return
+    let active = true
+    let widgetId = null
+    let timer = null
+    const mount = () => {
+      if (!active) return
+      if (!window.turnstile) {
+        timer = window.setTimeout(mount, 200)
+        return
+      }
+      if (turnstileRef.current) {
+        widgetId = window.turnstile.render(turnstileRef.current, {
+          sitekey: CAPTCHA_SITE_KEY,
+          callback: token => setCaptchaToken(token),
+          'expired-callback': () => setCaptchaToken(''),
+          'error-callback': () => setCaptchaToken('')
+        })
+      }
+    }
+    if (!document.querySelector('script[data-elmarwa-turnstile]')) {
+      const script = document.createElement('script')
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+      script.async = true
+      script.defer = true
+      script.setAttribute('data-elmarwa-turnstile', '1')
+      document.head.appendChild(script)
+    }
+    mount()
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      if (widgetId !== null && window.turnstile) {
+        window.turnstile.remove(widgetId)
+      }
+      setCaptchaToken('')
+    }
+  }, [showForm])
 
   useEffect(() => {
     // Public storefront only loads catalog data. No customer or employee data is exposed.
@@ -307,6 +352,10 @@ export default function App() {
     setOrders(await customerFetch(`${API}/customer/orders`).then(r=>r.json()))
   }
   const handleRegister = async () => {
+    if (!CAPTCHA_SITE_KEY) {
+      alert('التسجيل موقوف لحين إعداد حماية الموقع'); return
+    }
+    if (!captchaToken) { alert('أكمل التحقق من الأمان أولاً'); return }
     if (!form.name || !form.phone || !form.company || !form.address || !form.pass) {
       alert('املأ كل البيانات'); return
     }
@@ -315,15 +364,37 @@ export default function App() {
     }
     try {
       const response = await customerFetch(`${API}/customer/register`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({...form, captchaToken})
+      })
+      const result = await response.json()
+      if (!result.verification_required) throw new Error('لم يتم طلب تأكيد الموبايل')
+      setVerificationPhone(form.phone)
+      setVerificationCode('')
+      setShowForm(false)
+      setShowVerifyForm(true)
+    } catch (error) {
+      setCaptchaToken('')
+      alert('تعذر التسجيل: ' + error.message)
+    }
+  }
+  const handleVerifyPhone = async () => {
+    if (!/^\d{6,8}$/.test(verificationCode)) {
+      alert('اكتب رمز SMS المكون من 6 أرقام'); return
+    }
+    try {
+      const response = await customerFetch(`${API}/customer/verify`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({phone:verificationPhone,code:verificationCode})
       })
       await activateCustomer(await response.json())
-      setShowForm(false)
+      setShowVerifyForm(false)
+      setVerificationPhone('')
+      setVerificationCode('')
       setForm({name:'',phone:'',company:'',address:'',pass:''})
-      alert('تم إنشاء حسابك وتسجيل الدخول ✅')
+      alert('تم تأكيد الموبايل وتفعيل الحساب ✅')
     } catch (error) {
-      alert('تعذر تسجيل العميل: ' + error.message)
+      alert('تعذر التحقق: ' + error.message)
     }
   }
   const handleLogin = async () => {
@@ -658,7 +729,16 @@ export default function App() {
       </div>}
 
       {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder} disabled={orderBusy}>{orderBusy ? 'جاري حفظ الطلب...' : 'إرسال الطلب الآن ✅'}</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
-      {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
+      {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" autoComplete="new-password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} />{CAPTCHA_SITE_KEY ? <div ref={turnstileRef} style={{minHeight:'70px',marginTop:'12px'}} /> : <div style={{color:'#b91c1c',padding:'10px'}}>التسجيل غير متاح لحين إعداد الحماية</div>}<button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
+      {showVerifyForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:220, padding:'14px'}}>
+        <div style={{background:'white', borderRadius:'14px', padding:'22px', width:'100%', maxWidth:'390px'}}>
+          <h3>تأكيد رقم الموبايل</h3>
+          <p>اكتب رمز التحقق اللي وصلك على رقم {verificationPhone}</p>
+          <input inputMode="numeric" autoComplete="one-time-code" placeholder="رمز SMS" maxLength={8} value={verificationCode} onChange={e => setVerificationCode(e.target.value.replace(/\D/g,''))} style={inputStyle} />
+          <button onClick={handleVerifyPhone} style={{...btnStyle,background:'#16a34a',color:'white',width:'100%'}}>تأكيد وتفعيل الحساب</button>
+          <button onClick={()=>{setShowVerifyForm(false);setVerificationCode('');setShowForm(true)}} style={{...btnStyle,background:'#64748b',color:'white',width:'100%'}}>رجوع للتسجيل</button>
+        </div>
+      </div>}
       {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
       {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول المدير عبر Supabase</h3><input placeholder="البريد الإلكتروني للمدير" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin} disabled={adminBusy}>{adminBusy ? 'جاري التحقق...' : 'دخول'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
     </div>
