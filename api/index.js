@@ -91,6 +91,16 @@ function publicView(key, values) {
   }));
   return [];
 }
+function withoutLegacyPassword(record) {
+  if (!record || typeof record !== 'object') return record;
+  const { pass, password, ...safe } = record;
+  return safe;
+}
+function adminView(resource, items) {
+  return ['clients','employees'].includes(resource)
+    ? items.map(withoutLegacyPassword)
+    : items;
+}
 function updatedRecord(resource, previous, input) {
   return { ...previous, ...input, id: previous.id };
 }
@@ -142,7 +152,7 @@ export default async function handler(req, res) {
       const snapshot = await readSnapshot(db);
       const items = snapshot[storedKey(snapshot, resource)] ?? [];
       if (!Array.isArray(items)) return errorResponse(res, 500, 'Invalid resource data');
-      const result = identity?.isAdmin ? items : publicView(resource, items);
+      const result = identity?.isAdmin ? adminView(resource, items) : publicView(resource, items);
       const selected = id ? result.find(item => String(item.id) === id) : result;
       if (id && !selected) return errorResponse(res, 404, 'Record not found');
       if (req.method === 'HEAD') return res.status(200).end();
@@ -161,7 +171,7 @@ export default async function handler(req, res) {
     const outcome = await mutate(db, resource, req.method, id, input);
     if (outcome.notFound) return errorResponse(res, 404, 'Record not found');
     if (outcome.conflict) return errorResponse(res, 409, 'Concurrent update; retry');
-    return res.status(req.method === 'POST' ? 201 : 200).json(outcome.deleted ? { success: true } : outcome.record);
+    return res.status(req.method === 'POST' ? 201 : 200).json(outcome.deleted ? { success: true } : (['clients','employees'].includes(resource) ? withoutLegacyPassword(outcome.record) : outcome.record));
   } catch (error) {
     console.error('API error:', error.code || error.message);
     if (error.code === 'PGRST202') return errorResponse(res, 503, 'Missing elmarwa_mutate migration');
