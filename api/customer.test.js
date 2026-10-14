@@ -4,8 +4,8 @@ import { handleCustomerRequest } from './customer.js';
 
 const snapshot = {
   clients: [
-    {id: 1, name: 'First', phone: '01000000001', type: 'B', authUserId: 'user-1'},
-    {id: 2, name: 'Second', phone: '01000000002', type: 'VIP', authUserId: 'user-2'}
+    {id: 1, name: 'First', phone: '01000000001', type: 'B', authUserId: 'user-1', phoneVerified:true},
+    {id: 2, name: 'Second', phone: '01000000002', type: 'VIP', authUserId: 'user-2', phoneVerified:true}
   ],
   products: [
     {id: 9, name: 'Cards', subCategoryId: 3, pricesB: {'1000': 55}, pricesVIP: {'1000': 49}}
@@ -20,7 +20,7 @@ function fakeDb(state = snapshot) {
   let saved = null;
   const db = {
     auth: {
-      getUser: async token => ({data:{user: token === 'good' ? {id:'user-1'} : null}}),
+      getUser: async token => ({data:{user: token === 'good' ? {id:'user-1',phone:'+201000000001',phone_confirmed_at:'2026-10-14T12:00:00Z'} : null}}),
       signInWithPassword: async () => ({error:{message:'invalid password'}})
     },
     from: table => {
@@ -40,11 +40,11 @@ function fakeDb(state = snapshot) {
   };
   return db;
 }
-async function invoke(db, path, method='GET', body, token='good') {
+async function invoke(db, path, method='GET', body, token='good', authFactory) {
   const req = {url:path,method,body,headers:{authorization:token ? 'Bearer ' + token : ''}};
   const res = {code:200,body:null,status(code){this.code=code;return this;},
     json(body){this.body=body;return this;},end(){return this;}};
-  await handleCustomerRequest(req,res,db);
+  await handleCustomerRequest(req,res,db,authFactory);
   return res;
 }
 
@@ -106,4 +106,65 @@ test('payment proof is saved only to the authenticated customer order', async ()
   assert.equal(res.code,200);
   assert.equal(db.getSaved().paymentProof,'صورة التحويل مرفوعة');
   assert.match(db.getSaved().paymentProofPath,/^user-1\/.+\.png$/);
+});
+
+test('signup requires CAPTCHA and starts SMS confirmation without creating client record', async () => {
+  const prior=process.env.ENABLE_CUSTOMER_SIGNUP;
+  process.env.ENABLE_CUSTOMER_SIGNUP='true';
+  const calls=[];
+  const authFactory=()=>({auth:{
+    signUp:async ({phone,password,options})=>{
+      calls.push({phone,password,options});
+      return {data:{user:{id:'pending'}},error:null};
+    }
+  }});
+  try {
+    const db=fakeDb();
+    const body={
+      phone:'01099999999',pass:'test-password-4567',name:'New Customer',
+      company:'Prints',address:'Cairo',
+      captchaToken:'abcdefghijklmnopqrstuvwxyz'
+    };
+    const res=await invoke(db,'/api/customer/register','POST',body,'',authFactory);
+    assert.equal(res.code,202);
+    assert.equal(res.body.verification_required,true);
+    assert.equal(calls[0].phone,'+201099999999');
+    assert.equal(calls[0].options.captchaToken,body.captchaToken);
+    assert.equal(db.getSaved(),null);
+  } finally {
+    if(prior===undefined) delete process.env.ENABLE_CUSTOMER_SIGNUP;
+    else process.env.ENABLE_CUSTOMER_SIGNUP=prior;
+  }
+});
+test('invalid OTP never creates an account', async () => {
+  const prior=process.env.ENABLE_CUSTOMER_SIGNUP;
+  process.env.ENABLE_CUSTOMER_SIGNUP='true';
+  const authFactory=()=>({auth:{verifyOtp:async()=>({
+    data:{user:{id:'user-3',phone:'+201088888888',phone_confirmed_at:null},session:{access_token:'test'}}
+  })}});
+  try {
+    const db=fakeDb();
+    const res=await invoke(db,'/api/customer/verify','POST',{phone:'01088888888',code:'123456'},'',authFactory);
+    assert.equal(res.code,401);
+    assert.equal(db.getSaved(),null);
+  } finally {
+    if(prior===undefined) delete process.env.ENABLE_CUSTOMER_SIGNUP;
+    else process.env.ENABLE_CUSTOMER_SIGNUP=prior;
+  }
+});
+test('verified customer can sign in via normal public auth client without exposing password fields', async () => {
+  const authFactory=()=>({auth:{signInWithPassword:async ({phone,password})=>{
+    assert.equal(phone,'+201000000001');
+    assert.equal(password,'correct-pass-12');
+    return {data:{user:{id:'user-1',phone,phone_confirmed_at:'2026-10-14T12:00:00Z'},session:{access_token:'abc'}},error:null};
+  }}});
+  const res=await invoke(fakeDb(),'/api/customer/login','POST',{phone:'01000000001',pass:'correct-pass-12'},'',authFactory);
+  assert.equal(res.code,200);
+  assert.equal(res.body.client.id,1);
+  assert.equal(res.body.access_token,'abc');
+  assert.equal(res.body.client.pass,undefined);
+});
+test('signed PDF link belongs only to the signed in customer',async()=>{
+  const res=await invoke(fakeDb(),'/api/customer/file/2');
+  assert.equal(res.code,404);
 });
