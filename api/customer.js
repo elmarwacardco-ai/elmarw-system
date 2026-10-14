@@ -52,8 +52,8 @@ async function login(db, phone, password, auth = publicAuthClient()) {
   });
   if (error || !data?.session?.access_token) return null;
   const snapshot = await readData(db);
-  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id);
-  if (!client) return null;
+  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && c.phoneVerified === true);
+  if (!client || !data.user.phone_confirmed_at || data.user.phone !== toE164(phone)) return null;
   return { access_token: data.session.access_token, client: safeClient(client) };
 }
 async function identity(db, req) {
@@ -62,7 +62,7 @@ async function identity(db, req) {
   const { data, error } = await db.auth.getUser(match[1]);
   if (error || !data?.user) return null;
   const snapshot = await readData(db);
-  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id);
+  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && c.phoneVerified === true && c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, '')));
   return { user: data.user, client, snapshot };
 }
 function serialNumber(orders) {
@@ -111,7 +111,7 @@ function validLines(lines, products, tier) {
   });
 }
 
-export async function handleCustomerRequest(req, res, db) {
+export async function handleCustomerRequest(req, res, db, authFactory = publicAuthClient) {
   const parts = new URL(req.url, 'https://elmarwa.local').pathname.split('/').filter(Boolean);
   const action = parts[2];
   const fileOrderId = parts[3];
@@ -138,7 +138,7 @@ export async function handleCustomerRequest(req, res, db) {
       if ((current.clients || []).some(c => c.phone === phone)) {
         return respond(res, 409, 'الرقم مسجل بالفعل. الحسابات القديمة تحتاج إعادة تفعيل آمنة.');
       }
-      const auth = publicAuthClient();
+      const auth = authFactory();
       const { error } = await auth.auth.signUp({
         phone: toE164(phone), password,
         options: {
@@ -159,7 +159,7 @@ export async function handleCustomerRequest(req, res, db) {
       if (!PHONE.test(phone) || !/^\d{6,8}$/.test(code)) {
         return respond(res, 400, 'رقم الهاتف أو رمز SMS غير صحيح');
       }
-      const auth = publicAuthClient();
+      const auth = authFactory();
       const { data, error } = await auth.auth.verifyOtp({
         phone: toE164(phone), token: code, type: 'sms'
       });
@@ -200,7 +200,7 @@ export async function handleCustomerRequest(req, res, db) {
       const body = parse(req);
       const phone = String(body.phone || '').trim();
       if (!PHONE.test(phone) || typeof body.pass !== 'string') return respond(res, 400, 'بيانات الدخول غير صحيحة');
-      const session = await login(db, phone, body.pass);
+      const session = await login(db, phone, body.pass, authFactory());
       if (!session) return respond(res, 401, 'بيانات الدخول غير صحيحة أو الحساب يحتاج تفعيل');
       return res.status(200).json(session);
     }
