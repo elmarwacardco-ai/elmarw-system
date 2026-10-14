@@ -219,6 +219,14 @@ export async function handleCustomerRequest(req, res, db) {
     console.error('Customer API:', error.code || error.message);
     if (error.code === 'PGRST202') return respond(res, 503, 'مطلوب تطبيق ملف SQL على Supabase');
     if (error.code === '23505') return respond(res, 409, 'البيانات مسجلة بالفعل');
+    if ([
+      'ملف PDF أكبر من الحد المسموح',
+      'مطلوب ملف PDF صحيح',
+      'ملف PDF غير صالح أو أكبر من 2 ميجابايت',
+      'السلة غير صحيحة',
+      'منتج أو كمية غير صالحة',
+      'السعر غير متاح لهذه الكمية'
+    ].includes(error.message)) return respond(res, 400, error.message);
     if (error.message === 'Invalid request') return respond(res, 400, 'Invalid JSON request');
     return respond(res, 500, 'تعذر إتمام العملية');
   }
