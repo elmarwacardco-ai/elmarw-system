@@ -36,3 +36,11 @@ The automatic CI runs syntax, React build and unit tests against mocked data. It
 - Secure payment and employee authentication integration, production file size strategy, and final interface/design and WhatsApp bot implementation.
 - Migrate historical plaintext customer/employee credentials out of JSONB data, avoid displaying passwords in admin screens, and rotate compromised credentials.
 - Check Vercel deployment routing and Supabase migrations in an actual preview environment.
+
+## Preview-only direct PDF upload workflow
+- In a **preview** Vercel environment after applying SQL and verifying private Storage policies, enable BOTH `ENABLE_DIRECT_PDF_UPLOAD=true` and `VITE_ENABLE_DIRECT_PDF_UPLOAD=true` (then rebuild preview). Keep disabled in production until manual tests pass.
+- A verified customer requests `POST /api/customer/upload-url` with the PDF name/size. The API issues a unique private signed upload URL tied to that customer. The browser sends the file directly to Supabase; it never forwards the whole PDF through Vercel.
+- Then `POST /api/customer/orders` submits `uploadPath`. The backend confirms the file path belongs to the authenticated customer, the file exists, is recent, has an allowed MIME type and is no larger than 6 MiB; the database rejects duplicate file paths/serials under its atomic lock.
+- Without the flags, the legacy in-request data-URL route is limited to 2 MiB. **For print-ready PDFs larger than 6 MiB, implement and test TUS resumable uploads** before increasing the limit.
+- Signed upload URLs expire after 2 hours. Unfinished uploads may leave orphan files; plan a periodic cleanup job after production deployment.
+- See [Supabase signed uploads](https://supabase.com/docs/reference/javascript/file-buckets-createsigneduploadurl) and [Storage file info](https://supabase.com/docs/reference/javascript/file-buckets-info).
