@@ -1,0 +1,10 @@
+{
+  "name": "elmarwa-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix web run dev -- --host 127.0.0.1",
+    "build": "npm --prefix web run build",
+    "check": "npm --prefix web run build"
+  }
+}

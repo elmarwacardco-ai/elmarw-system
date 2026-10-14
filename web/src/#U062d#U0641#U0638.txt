@@ -1,0 +1,288 @@
+import React, { useState, useEffect } from 'react'
+
+export default function ElmarwSystem() {
+  const [clients, setClients] = useState([])
+  const [products, setProducts] = useState([])
+  const [showForm, setShowForm] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
+  const [showDashboard, setShowDashboard] = useState(false)
+  const [showProducts, setShowProducts] = useState(false)
+  const [showProductForm, setShowProductForm] = useState(false)
+  const [showAlert, setShowAlert] = useState({ show: false, msg: '' })
+  const [form, setForm] = useState({ name: '', phone: '', company: '', pass: '', type: 'عادي B' })
+  const [productForm, setProductForm] = useState({ name: '', priceB: '', priceVIP: '', id: null })
+  const [login, setLogin] = useState({ phone: '', pass: '' })
+  const [loggedClient, setLoggedClient] = useState(null)
+
+  useEffect(() => {
+    const savedClients = JSON.parse(localStorage.getItem('clients')) || []
+    const savedProducts = JSON.parse(localStorage.getItem('products')) || []
+    setClients(savedClients)
+    setProducts(savedProducts)
+  }, [])
+
+  useEffect(() => { localStorage.setItem('clients', JSON.stringify(clients)) }, [clients])
+  useEffect(() => { localStorage.setItem('products', JSON.stringify(products)) }, [products])
+
+  const handleRegister = () => {
+    if(!form.name ||!form.phone ||!form.company ||!form.pass){
+      setShowAlert({ show: true, msg: 'من فضلك املأ كل البيانات' })
+      return
+    }
+    const isExist = clients.some(c => c.phone === form.phone)
+    if(isExist){
+      setShowAlert({ show: true, msg: 'هذا الرقم مسجل بالفعل. سيتم تحويلك للدخول' })
+      setTimeout(() => { setShowForm(false); setShowLogin(true) }, 2000)
+      return
+    }
+    const newClient = {...form, id: Date.now() }
+    setClients([...clients, newClient])
+    setForm({ name: '', phone: '', company: '', pass: '', type: 'عادي B' })
+    setShowAlert({ show: true, msg: 'تم التسجيل بنجاح!' })
+    setTimeout(() => setShowForm(false), 1500)
+  }
+
+  const handleLogin = () => {
+    const client = clients.find(c => c.phone === login.phone && c.pass === login.pass)
+    if(client){
+      setLoggedClient(client)
+      setShowAlert({ show: true, msg: `اهلا ${client.name} - انت عميل ${client.type}` })
+      setShowLogin(false)
+      setShowProducts(true)
+    } else {
+      setShowAlert({ show: true, msg: 'رقم الموبايل او كلمة السر خطأ' })
+    }
+  }
+
+  const handleForgotPass = () => {
+    const phone = prompt('اكتب رقم الموبايل المسجل');
+    if(!phone) return;
+    const client = clients.find(c => c.phone === phone);
+    if(!client){
+      setShowAlert({show: true, msg: 'الرقم ده مش مسجل'});
+      return;
+    }
+    const company = prompt('اكتب اسم الشركة للتأكيد');
+    if(company!== client.company){
+      setShowAlert({show: true, msg: 'بيانات الشركة غلط'});
+      return;
+    }
+    const newPass = prompt('اكتب كلمة السر الجديدة');
+    if(!newPass) return;
+    setClients(clients.map(c => c.phone === phone? {...c, pass: newPass} : c));
+    setShowAlert({show: true, msg: 'تم تغيير كلمة السر بنجاح'});
+  }
+
+  const deleteClient = (id) => {
+    setClients(clients.filter(c => c.id!== id))
+    setShowAlert({ show: true, msg: 'تم حذف العميل' })
+  }
+
+  const editClient = (id) => {
+    const client = clients.find(c => c.id === id)
+    const newType = prompt(`نوع العميل: اكتب VIP او عادي B`, client.type)
+    const newPass = prompt(`كلمة السر الجديدة للعميل: ${client.name}`, client.pass)
+    if(newType && newPass){
+      setClients(clients.map(cl => cl.id === id? {...cl, type: newType, pass: newPass} : cl))
+      setShowAlert({show: true, msg: 'تم تعديل بيانات العميل'})
+    }
+  }
+
+  const handleSaveProduct = () => {
+    if(!productForm.name || productForm.priceB === '' || productForm.priceVIP === ''){
+      setShowAlert({ show: true, msg: 'املأ كل بيانات المنتج' })
+      return
+    }
+    if(productForm.id){
+      setProducts(products.map(p => p.id === productForm.id? {...productForm, priceB: Number(productForm.priceB), priceVIP: Number(productForm.priceVIP)} : p))
+      setShowAlert({ show: true, msg: 'تم تعديل المنتج' })
+    } else {
+      const newProduct = {...productForm, id: Date.now(), priceB: Number(productForm.priceB), priceVIP: Number(productForm.priceVIP)}
+      setProducts([...products, newProduct])
+      setShowAlert({ show: true, msg: 'تم اضافة المنتج' })
+    }
+    setProductForm({ name: '', priceB: '', priceVIP: '', id: null })
+    setShowProductForm(false)
+  }
+
+  const editProduct = (p) => {
+    setProductForm(p)
+    setShowProductForm(true)
+  }
+
+  const deleteProduct = (id) => {
+    setProducts(products.filter(p => p.id!== id))
+    setShowAlert({ show: true, msg: 'تم حذف المنتج' })
+  }
+
+  const getPrice = (product, clientType) => {
+    return clientType === 'VIP'? product.priceVIP : product.priceB
+  }
+
+  const btnStyle = {
+    padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+    fontWeight: 'bold', fontSize: '14px', margin: '5px'
+  }
+
+  const inputStyle = {
+    display: 'block', width: '100%', margin: '10px 0', padding: '10px',
+    borderRadius: '6px', border: '1px solid #ccc', fontSize: '14px'
+  }
+
+  return (
+    <div style={{ fontFamily: 'Tahoma', direction: 'rtl', padding: '20px', background: '#f5f7fa', minHeight: '100vh' }}>
+      <h1 style={{ textAlign: 'center', color: '#1e3a8a' }}>نظام المروة للعملاء</h1>
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <button style={{...btnStyle, background: '#2563eb', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل عميل جديد</button>
+        <button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowLogin(true)}>دخول عميل</button>
+        <button style={{...btnStyle, background: '#ca8a04', color: 'white'}} onClick={() => setShowDashboard(true)}>لوحة التحكم</button>
+        <button style={{...btnStyle, background: '#7c3aed', color: 'white'}} onClick={() => setShowProducts(true)}>المنتجات والاسعار</button>
+      </div>
+
+      {showAlert.show && (
+        <div style={{ background: '#d1fae5', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #6ee7b7' }}>
+          {showAlert.msg}
+          <button onClick={() => setShowAlert({ show: false, msg: '' })} style={{ float: 'left', background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>X</button>
+        </div>
+      )}
+
+      {showForm && (
+        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '500px', margin: '0 auto' }}>
+          <h3 style={{ color: '#1e3a8a', textAlign: 'center' }}>تسجيل عميل جديد</h3>
+          <input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} />
+          <input placeholder="رقم الموبايل" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} style={inputStyle} />
+          <input placeholder="اسم الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} />
+          <input placeholder="كلمة السر" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} />
+          <select value={form.type} onChange={e => setForm({...form, type: e.target.value})} style={inputStyle}>
+            <option value="عادي B">عميل عادي B</option>
+            <option value="VIP">عميل VIP</option>
+          </select>
+          <div style={{ textAlign: 'center' }}>
+            <button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={handleRegister}>تسجيل</button>
+            <button style={{...btnStyle, background: '#6b7280', color: 'white'}} onClick={() => setShowForm(false)}>اغلاق</button>
+          </div>
+        </div>
+      )}
+
+      {showLogin && (
+        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '500px', margin: '0 auto' }}>
+          <h3 style={{ color: '#1e3a8a', textAlign: 'center' }}>دخول عميل</h3>
+          <input placeholder="رقم الموبايل" value={login.phone} onChange={e => setLogin({...login, phone: e.target.value})} style={inputStyle} />
+          <input placeholder="كلمة السر" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} />
+          <button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button>
+          <button onClick={handleForgotPass} style={{ margin: '10px 0', width: '100%', background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }}>نسيت كلمة السر؟</button>
+          <button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowLogin(false)}>اغلاق</button>
+        </div>
+      )}
+
+      {showProductForm && (
+        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+          <h3 style={{ color: '#1e3a8a' }}>{productForm.id? 'تعديل منتج' : 'اضافة منتج جديد'}</h3>
+          <input placeholder="اسم المنتج" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} style={inputStyle} />
+          <input placeholder="سعر عادي B" type="number" value={productForm.priceB} onChange={e => setProductForm({...productForm, priceB: e.target.value})} style={inputStyle} />
+          <input placeholder="سعر VIP" type="number" value={productForm.priceVIP} onChange={e => setProductForm({...productForm, priceVIP: e.target.value})} style={inputStyle} />
+          <button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={handleSaveProduct}>حفظ</button>
+          <button style={{...btnStyle, background: '#6b7280', color: 'white'}} onClick={() => {setShowProductForm(false); setProductForm({ name: '', priceB: '', priceVIP: '', id: null })}}>الغاء</button>
+        </div>
+      )}
+
+      {showProducts && (
+        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ color: '#1e3a8a' }}>قائمة المنتجات {loggedClient && `- اهلا ${loggedClient.name}`}</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#1e3a8a', color: 'white' }}>
+                <th style={{ padding: '12px', borderRadius: '6px 0 0 0' }}>المنتج</th>
+                <th style={{ padding: '12px' }}>سعر عادي B</th>
+                <th style={{ padding: '12px' }}>سعر VIP</th>
+                <th style={{ padding: '12px', borderRadius: '0 6px 0 0' }}>سعرك</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(p => (
+                <tr key={p.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '10px' }}>{p.name}</td>
+                  <td style={{ padding: '10px' }}>{p.priceB} جنيه</td>
+                  <td style={{ padding: '10px' }}>{p.priceVIP} جنيه</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#16a34a' }}>
+                    {loggedClient? getPrice(p, loggedClient.type) : 'سجل دخول'} جنيه
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button style={{...btnStyle, background: '#6b7280', color: 'white', marginTop: '15px'}} onClick={() => setShowProducts(false)}>اغلاق</button>
+        </div>
+      )}
+
+      {showDashboard && (
+        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ color: '#1e3a8a' }}>لوحة التحكم</h3>
+
+          <h4>العملاء - العدد: {clients.length}</h4>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+            <thead>
+              <tr style={{ background: '#1e3a8a', color: 'white' }}>
+                <th style={{ padding: '12px' }}>الاسم</th>
+                <th style={{ padding: '12px' }}>الموبايل</th>
+                <th style={{ padding: '12px' }}>الشركة</th>
+                <th style={{ padding: '12px' }}>النوع</th>
+                <th style={{ padding: '12px' }}>تعديل</th>
+                <th style={{ padding: '12px' }}>حذف</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map(c => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '10px' }}>{c.name}</td>
+                  <td style={{ padding: '10px' }}>{c.phone}</td>
+                  <td style={{ padding: '10px' }}>{c.company}</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: c.type === 'VIP'? '#ca8a04' : '#374151' }}>{c.type}</td>
+                  <td style={{ padding: '10px' }}>
+                    <button onClick={() => editClient(c.id)} style={{...btnStyle, background: '#f59e0b', color: 'white', padding: '6px 12px' }}>تعديل</button>
+                  </td>
+                  <td style={{ padding: '10px' }}>
+                    <button onClick={() => deleteClient(c.id)} style={{...btnStyle, background: '#dc2626', color: 'white', padding: '6px 12px' }}>حذف</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4>المنتجات - العدد: {products.length}</h4>
+            <button onClick={() => {setProductForm({ name: '', priceB: '', priceVIP: '', id: null }); setShowProductForm(true)}} style={{...btnStyle, background: '#16a34a', color: 'white'}}>+ اضافة منتج</button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
+            <thead>
+              <tr style={{ background: '#1e3a8a', color: 'white' }}>
+                <th style={{ padding: '12px' }}>المنتج</th>
+                <th style={{ padding: '12px' }}>سعر B</th>
+                <th style={{ padding: '12px' }}>سعر VIP</th>
+                <th style={{ padding: '12px' }}>تعديل</th>
+                <th style={{ padding: '12px' }}>حذف</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(p => (
+                <tr key={p.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '10px' }}>{p.name}</td>
+                  <td style={{ padding: '10px' }}>{p.priceB}</td>
+                  <td style={{ padding: '10px' }}>{p.priceVIP}</td>
+                  <td style={{ padding: '10px' }}>
+                    <button onClick={() => editProduct(p)} style={{...btnStyle, background: '#2563eb', color: 'white', padding: '6px 12px' }}>تعديل</button>
+                  </td>
+                  <td style={{ padding: '10px' }}>
+                    <button onClick={() => deleteProduct(p.id)} style={{...btnStyle, background: '#dc2626', color: 'white', padding: '6px 12px' }}>حذف</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button style={{...btnStyle, background: '#6b7280', color: 'white', marginTop: '15px'}} onClick={() => setShowDashboard(false)}>اغلاق</button>
+        </div>
+      )}
+    </div>
+  )
+}
