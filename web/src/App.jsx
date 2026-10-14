@@ -94,6 +94,8 @@ export default function App() {
   const [notifications, setNotifications] = useState([])
   const [clientSearch, setClientSearch] = useState('')
   const [orderSearch, setOrderSearch] = useState('')
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [catalogCategory, setCatalogCategory] = useState('all')
   const [accountingDate, setAccountingDate] = useState(new Date().toISOString().slice(0,10))
   const [form, setForm] = useState({ name: '', phone: '', company: '', address: '', pass: '' })
   const [employeeForm, setEmployeeForm] = useState({ id: null, name: '', phone: '', pass: '', permissions: { dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } })
@@ -536,9 +538,15 @@ export default function App() {
   const handleRemoveOrderFromFolder = async (folderId, orderId) => { const f = folders.find(x=> x.id===folderId); const newIds = (f.orderIds||[]).filter(id=> Number(id)!==Number(orderId)); await apiFetch(`${API}/folders/${folderId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({orderIds: newIds})}); loadAll() }
   const handleDeleteFolder = async (folder) => { const enteredPass = String(deletePass).trim(); const empPass = String(loggedEmployee?.pass||'').trim(); const isAdmin = Boolean(sessionStorage.getItem(TOKEN_KEY)); if(!isAdmin){ alert('باسورد التأكيد غلط ❌'); return } await apiFetch(`${API}/folders/${folder.id}`, {method:'DELETE'}); setShowDeleteConfirm(null); setDeletePass(''); loadAll() }
 
+  const catalogVisible = products.filter(product => {
+    const q = catalogSearch.trim().toLocaleLowerCase('ar-EG')
+    const sub = subCategories.find(x => String(x.id) === String(product.subCategoryId))
+    return (!q || String(product.name||'').toLocaleLowerCase('ar-EG').includes(q))
+      && (catalogCategory==='all' || String(product.categoryId||sub?.categoryId||'')===String(catalogCategory))
+  })
   const ProductCard = ({ product }) => (
-    <div style={{ background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-      {product.image? <img src={product.image} alt={product.name} style={{width: '100%', height: '190px', objectFit: 'cover'}} /> : <div style={{height:'190px', background:'#f1f5f9', display:'flex', alignItems:'center', justifyContent:'center'}}>بدون صورة</div>}
+    <div className="elmarwa-product-card" style={{background:'white'}}>
+      {product.image? <img className="elmarwa-product-image" src={product.image} alt={product.name} loading="lazy" style={{width:'100%',objectFit:'cover'}} /> : <div className="elmarwa-product-placeholder">🖨️ صورة المنتج</div>}
       <div style={{padding: '15px'}}>
         <h3 style={{ color: '#1e3a8a', margin: '0 0 5px 0', fontSize:'16px', fontWeight:900 }}>{product.name}</h3>
         <div style={{background: '#f8fafc', borderRadius: '10px', padding: '10px', border:'1px solid #eef2f7'}}>
@@ -762,20 +770,20 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: 'Tahoma', direction: 'rtl' }}>
-      <div style={{ background: '#1e3a8a', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
-        <h2 style={{ margin: 0, cursor: 'pointer' }} onClick={() => setSelectedSub(null)}>المروة - REAL DB ✅</h2>
-        <div style={{display:'flex', alignItems:'center'}}>
+    <div className="elmarwa-app" dir="rtl">
+      <header className="elmarwa-header" style={{display:'flex',justifyContent:'space-between',position:'sticky',top:0,zIndex:100}}>
+        <button className="elmarwa-brand" onClick={()=>{setSelectedSub(null);setCatalogCategory('all');setCatalogSearch('')}} style={{background:'none',border:'none',padding:0,textAlign:'right'}}><strong>المروة للطباعة</strong><small>معرض المنتجات وإدارة الأوردرات</small></button>
+        <div className="elmarwa-header-actions">
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
           {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); setCart([]); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
         </div>
-      </div>
+      </header>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
       {loadError && <div style={{padding:'12px',background:'#fee2e2',color:'#991b1b',direction:'rtl'}}>تعذر تحميل البيانات: {loadError}</div>}
-      <div style={{ padding: '20px', background: '#f5f7fa', minHeight: '80vh' }}>
+      <main className="elmarwa-main">
         {!selectedSub && <>{categories.map(cat => { const catSubs = subCategories.filter(s => Number(s.categoryId) === Number(cat.id)); if(catSubs.length===0) return null; return (<div key={cat.id} style={{marginBottom: '24px'}}><h3 style={{ color: '#1e40af', fontSize:'20px', marginBottom:'10px' }}>{cat.name}</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>{catSubs.map(sub => (<div key={sub.id} onClick={() => setSelectedSub(sub)} style={{ background: 'white', borderRadius: '14px', overflow: 'hidden', cursor: 'pointer', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', border:'1px solid #dbeafe' }}>{sub.image? <img src={sub.image} style={{width: '100%', height: '130px', objectFit: 'cover'}}/> : <div style={{height:'130px', background:'#f1f5f9', display:'flex', alignItems:'center', justifyContent:'center'}}>بدون صورة</div>}<div style={{padding: '10px', textAlign: 'center', fontWeight: 'bold', color:'#1e3a8a'}}>{sub.name}</div></div>))}</div></div>) })}<div style={{marginTop:'18px'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}><h2 style={{margin:0,color:'#0f172a'}}>🛍️ كل المنتجات</h2><span style={{background:'#dbeafe',color:'#1e40af',padding:'5px 10px',borderRadius:'15px',fontSize:'12px',fontWeight:'bold'}}>{products.length} منتج</span></div><div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:'14px' }}>{products.map(p=><ProductCard key={p.id} product={p}/>)}</div>{products.length===0&&<div style={{background:'white',padding:'30px',borderRadius:'12px',textAlign:'center'}}>لا توجد منتجات حالياً</div>}</div></>}
         {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
-      </div>
+      </main>
 
       {showMyOrders && <div style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.85)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:400, padding:'10px'}}>
         <div style={{background:'white', width:'95%', maxWidth:'900px', maxHeight:'92vh', borderRadius:'16px', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px rgba(0,0,0,0.4)'}}>
