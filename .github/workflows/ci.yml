@@ -16,7 +16,7 @@ jobs:
             web/package-lock.json
             api/package-lock.json
       - name: Install API dependencies
-        run: npm ci --prefix api
+        run: npm install --prefix api --no-audit --no-fund
       - name: Syntax-check backend
         run: |
           node --check api/index.js
