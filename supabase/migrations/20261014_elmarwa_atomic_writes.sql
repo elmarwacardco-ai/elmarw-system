@@ -40,12 +40,12 @@ BEGIN
   END IF;
   IF p_method = 'POST' THEN
     IF p_resource = 'clients' AND EXISTS (
-      SELECT 1 FROM jsonb_array_elements(collection) AS x
-      WHERE x->>'phone' = p_payload->>'phone'
+      SELECT 1 FROM jsonb_array_elements(collection) AS x(value)
+      WHERE x.value->>'phone' = p_payload->>'phone'
     ) THEN
       RAISE EXCEPTION USING ERRCODE = '23505', MESSAGE = 'Phone already registered';
     END IF;
-    SELECT COALESCE(MAX((x->>'id')::bigint),0)+1 INTO new_id FROM jsonb_array_elements(collection) AS x;
+    SELECT COALESCE(MAX((x.value->>'id')::bigint),0)+1 INTO new_id FROM jsonb_array_elements(collection) AS x(value);
     target := (p_payload - 'id') || jsonb_build_object('id', new_id);
     updated := collection || jsonb_build_array(target);
   ELSE
@@ -87,3 +87,14 @@ INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
 VALUES ('elmarwa-payment-proofs','elmarwa-payment-proofs',false,1048576,ARRAY['image/png','image/jpeg'])
 ON CONFLICT (id) DO UPDATE
 SET public = false, file_size_limit = 1048576, allowed_mime_types = ARRAY['image/png','image/jpeg'];
+
+-- The JSONB app_data row contains personal information. Client-facing Supabase keys
+-- must NEVER read it directly; all approved access runs through the server-only API.
+-- Only apply after confirming there are no other direct database consumers.
+ALTER TABLE public.app_data ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.app_data FROM PUBLIC, anon, authenticated;
+GRANT SELECT, UPDATE ON TABLE public.app_data TO service_role;
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.admin_users FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.admin_users TO service_role;
