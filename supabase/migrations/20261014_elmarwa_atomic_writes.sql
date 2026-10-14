@@ -81,3 +81,9 @@ INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
 VALUES ('elmarwa-orders','elmarwa-orders',false,2097152,ARRAY['application/pdf'])
 ON CONFLICT (id) DO UPDATE
 SET public = false, file_size_limit = 2097152, allowed_mime_types = ARRAY['application/pdf'];
+
+-- Keep payment screenshots private as well.
+INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+VALUES ('elmarwa-payment-proofs','elmarwa-payment-proofs',false,1048576,ARRAY['image/png','image/jpeg'])
+ON CONFLICT (id) DO UPDATE
+SET public = false, file_size_limit = 1048576, allowed_mime_types = ARRAY['image/png','image/jpeg'];
