@@ -22,7 +22,7 @@ jobs:
           node --check api/index.js
           node --check api/customer.js
       - name: Run customer API tests
-        run: node --test api/customer.test.js
+        run: node --test api/customer.test.js api/security.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app
