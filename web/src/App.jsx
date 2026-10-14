@@ -3,6 +3,7 @@ const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const TOKEN_KEY = 'elmarw_admin_access_token'
+const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
 async function apiFetch(url, options = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY)
   const headers = new Headers(options.headers || {})
@@ -15,6 +16,29 @@ async function apiFetch(url, options = {}) {
   return response
 }
 
+
+async function customerFetch(url, options = {}) {
+  const token = sessionStorage.getItem(CUSTOMER_TOKEN_KEY)
+  const headers = new Headers(options.headers || {})
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(url, { ...options, headers })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body?.error || `HTTP ${response.status}`)
+  }
+  return response
+}
+
+async function restoreCustomer() {
+  const token = sessionStorage.getItem(CUSTOMER_TOKEN_KEY)
+  if (!token) return null
+  const [profile, catalog, orders] = await Promise.all([
+    customerFetch(`${API}/customer/me`).then(r => r.json()),
+    customerFetch(`${API}/customer/catalog`).then(r => r.json()),
+    customerFetch(`${API}/customer/orders`).then(r => r.json())
+  ])
+  return { client: profile.client, products: catalog, orders }
+}
 
 async function apiReadPublic(resource) {
   const response = await fetch(`${API}/${resource}`)
@@ -152,6 +176,21 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!sessionStorage.getItem(CUSTOMER_TOKEN_KEY)) return
+    restoreCustomer().then(session => {
+      if (session) {
+        setLoggedClient(session.client)
+        setProducts(session.products)
+        setOrders(session.orders)
+      }
+    }).catch(error => {
+      console.warn('Customer session expired:', error.message)
+      sessionStorage.removeItem(CUSTOMER_TOKEN_KEY)
+      setLoggedClient(null)
+    })
+  }, [])
+
+  useEffect(() => {
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) {
@@ -167,7 +206,7 @@ export default function App() {
     const nt = localStorage.getItem('notifications')
     if (nt) { try { setNotifications(JSON.parse(nt)) } catch {} }
   }, [])
-  useEffect(() => { if(loggedClient) localStorage.setItem('loggedClient', JSON.stringify(loggedClient)) }, [loggedClient])
+  // Customer identity is restored through the server-validated session, never localStorage.
   useEffect(() => { localStorage.setItem('notifications', JSON.stringify(notifications)) }, [notifications])
 
   const btnStyle = { padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', margin: '5px' }
@@ -200,19 +239,77 @@ export default function App() {
 
   const safeItems = (o) => { let it = o.items || []; if (typeof it === 'string') { try { it = JSON.parse(it) } catch { it = [] } } return Array.isArray(it)? it : [] }
   const readFileAsDataUrl = (file) => new Promise((resolve, reject) => { if(!file) return resolve(''); const r = new FileReader(); r.onload = () => resolve(r.result || ''); r.onerror = reject; r.readAsDataURL(file) })
-  const downloadOrderFile = (o) => {
-    if(!o.fileData){ alert('الملف الأصلي لهذا الطلب غير محفوظ داخل النظام. الطلبات الجديدة سيتم حفظ الملف معها.'); return }
-    const a = document.createElement('a'); a.href = o.fileData; a.download = o.fileName || `order-${o.id}`; document.body.appendChild(a); a.click(); a.remove()
+  const downloadOrderFile = async (o) => {
+    try {
+      if (o.filePath) {
+        const isAdmin = showAdmin && Boolean(sessionStorage.getItem(TOKEN_KEY))
+        const request = isAdmin ? apiFetch : customerFetch
+        const response = await request(`${API}/customer/file/${o.id}`)
+        const result = await response.json()
+        window.open(result.url, '_blank', 'noopener,noreferrer')
+        return
+      }
+      if (!o.fileData) throw new Error('الملف الأصلي غير محفوظ في النظام')
+      const anchor = document.createElement('a')
+      anchor.href = o.fileData
+      anchor.download = o.fileName || `order-${o.id}`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    } catch (error) {
+      alert('تعذر تنزيل الملف: ' + error.message)
+    }
   }
   const orderSearchText = (o) => `${o.clientName||''} ${o.clientPhone||''}`.toLowerCase()
   const visibleDashboardOrders = orders.filter(o => o.status !== 'تم التسليم' && o.status !== 'ملغي' && (!orderSearch.trim() || orderSearchText(o).includes(orderSearch.trim().toLowerCase())))
-  const myOrdersList = orders.filter(o => { if (!loggedClient) return false; const cId = String(o.clientId || ''); const lId = String(loggedClient.id || ''); const cPhone = String(o.clientPhone || '').replace(/\D/g,''); const lPhone = String(loggedClient.phone || '').replace(/\D/g,''); return (cId && lId && cId === lId) || (cPhone && lPhone && cPhone === lPhone) }).sort((a,b)=> b.id - a.id)
+  const myOrdersList = orders.filter(o => loggedClient &&
+    String(o.clientId) === String(loggedClient.id)
+  ).sort((a,b) => Number(b.id)-Number(a.id))
   const getPaymentStatus = (total, paid) => { const p = Number(paid)||0; const t = Number(total)||0; if(p<=0) return 'غير مدفوع'; if(p>=t) return 'مدفوع بالكامل'; return 'مدفوع جزئي' }
   const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
   const updateOrder = async (id, updates) => { const oldOrder = orders.find(o=> o.id===id); await apiFetch(`${API}/orders/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)}); if(oldOrder && (updates.status || updates.paidAmount!==undefined || updates.paymentMethod)){ const newNotif = { id: Date.now(), orderId: id, clientId: oldOrder.clientId, clientPhone: oldOrder.clientPhone, msg: `طلبك #${id} ${updates.status? `بقى: ${updates.status}`:''} ${updates.paidAmount!==undefined? ` - المدفوع: ${updates.paidAmount}ج`:''}`, date: new Date().toLocaleString('ar-EG'), read: false }; setNotifications(prev=> [newNotif,...prev].slice(0,50)) } loadAll() }
   const myUnread = notifications.filter(n=> { if(!loggedClient) return false; return (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,'')) &&!n.read })
-  const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(form.phone.length!==11){ alert('الموبايل لازم 11 رقم'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } try { await apiFetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); } catch (error) { alert('تعذر إتمام التسجيل: ' + error.message + '\\nالتسجيل العام يحتاج نظام حسابات العملاء الآمن.'); return } alert('تم التسجيل ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); loadAll() }
-  const handleLogin = () => { const c = clients.find(x => String(x.phone) === String(login.phone) && x.pass === login.pass); if(c){ setLoggedClient(c); setShowLogin(false); setLogin({phone:'', pass:''}) } else { alert('بيانات غلط ❌\n\nلو نسيت الباسورد برجاء التواصل مع خدمة العملاء\n📞 01000000000') } }
+  const activateCustomer = async (session) => {
+    if (!session?.access_token || !session?.client) throw new Error('الرد من السيرفر غير مكتمل')
+    sessionStorage.setItem(CUSTOMER_TOKEN_KEY, session.access_token)
+    setLoggedClient(session.client)
+    localStorage.removeItem('loggedClient')
+    setProducts(await customerFetch(`${API}/customer/catalog`).then(r=>r.json()))
+    setOrders(await customerFetch(`${API}/customer/orders`).then(r=>r.json()))
+  }
+  const handleRegister = async () => {
+    if (!form.name || !form.phone || !form.company || !form.address || !form.pass) {
+      alert('املأ كل البيانات'); return
+    }
+    if (!/^01\d{9}$/.test(form.phone) || form.pass.length < 8) {
+      alert('راجع رقم الهاتف وكلمة المرور (8 أحرف على الأقل)'); return
+    }
+    try {
+      const response = await customerFetch(`${API}/customer/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      await activateCustomer(await response.json())
+      setShowForm(false)
+      setForm({name:'',phone:'',company:'',address:'',pass:''})
+      alert('تم إنشاء حسابك وتسجيل الدخول ✅')
+    } catch (error) {
+      alert('تعذر تسجيل العميل: ' + error.message)
+    }
+  }
+  const handleLogin = async () => {
+    if (!login.phone || !login.pass) { alert('اكتب رقم التليفون والباسورد'); return }
+    try {
+      const response = await customerFetch(`${API}/customer/login`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(login)
+      })
+      await activateCustomer(await response.json())
+      setShowLogin(false)
+      setLogin({phone:'',pass:''})
+    } catch (error) {
+      alert('تعذر الدخول: ' + error.message)
+    }
+  }
   const handleAdminLogin = async () => {
     const email = adminLogin.user.trim()
     const password = adminLogin.pass
@@ -257,26 +354,33 @@ export default function App() {
     setShowCart(true)
   }
   const handlePlaceOrder = async () => {
-    if(cart.length === 0){ alert('اختر منتج أولاً'); return }
-    if(!orderFile){ alert('من فضلك ارفع ملف الطلب أولاً 📎'); return }
-    const total = cart.reduce((s,i)=>s+i.total,0);
-    const serialNumber = generateSerial();
-    const fileData = await readFileAsDataUrl(orderFile);
-    const newOrder = {
-      serialNumber, executionDate: new Date().toISOString().slice(0,10), readyDate: '',
-      clientName: loggedClient.name, clientPhone: loggedClient.phone, clientId: loggedClient.id,
-      workerName: orderClientName.trim(), items: cart, total, paidAmount:0, paymentStatus:'غير مدفوع',
-      paymentMethod: customerPaymentMethod, paymentProof:'', notes: orderNotes, status:'جديد',
-      date: new Date().toLocaleString('ar-EG'), fileName: orderFile.name, fileData
-    };
+    if (!loggedClient || !sessionStorage.getItem(CUSTOMER_TOKEN_KEY)) {
+      alert('سجل دخول العميل أولاً'); setShowLogin(true); return
+    }
+    if (!cart.length) { alert('اختر منتجاً أولاً'); return }
+    if (!orderFile) { alert('ارفع ملف PDF الخاص بالشغل أولاً'); return }
+    if (!orderFile.name.toLowerCase().endsWith('.pdf') || orderFile.size > 2 * 1024 * 1024) {
+      alert('الملف لازم يكون PDF وأقل من أو يساوي 2 ميجابايت'); return
+    }
     try {
-      const res = await apiFetch(`${API}/orders`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(newOrder)});
-      if(!res.ok) throw new Error('order failed');
-      setCart([]); setOrderClientName(''); setOrderNotes(''); setOrderFile(null); setCustomerPaymentMethod('نقدي'); setShowCart(false);
-      await loadAll();
-      setShowMyOrders(true);
-      alert('تم إرسال الطلب بنجاح ✅');
-    } catch(e){ alert('حصل خطأ أثناء إرسال الطلب ❌'); }
+      const fileData = await readFileAsDataUrl(orderFile)
+      const response = await customerFetch(`${API}/customer/orders`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body:JSON.stringify({
+          items:cart.map(item => ({productId:item.productId,qty:item.qty})),
+          workerName:orderClientName.trim(), notes:orderNotes,
+          paymentMethod:customerPaymentMethod, fileName:orderFile.name, fileData
+        })
+      })
+      const created = await response.json()
+      setOrders(previous => [...previous, created])
+      setCart([]); setOrderClientName(''); setOrderNotes('')
+      setOrderFile(null); setCustomerPaymentMethod('نقدي'); setShowCart(false)
+      setShowMyOrders(true)
+      alert('تم حفظ الطلب ✅ السيريال: ' + created.serialNumber)
+    } catch (error) {
+      alert('تعذر حفظ الطلب: ' + error.message)
+    }
   }
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; if(price===undefined || price===null || price==='') return null; return price }
   const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
@@ -474,7 +578,7 @@ export default function App() {
         <h2 style={{ margin: 0, cursor: 'pointer' }} onClick={() => setSelectedSub(null)}>المروة - REAL DB ✅</h2>
         <div style={{display:'flex', alignItems:'center'}}>
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
-          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); localStorage.removeItem('loggedClient'); setCart([])}}> خروج</span></>}
+          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); setCart([]); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
         </div>
       </div>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
@@ -520,7 +624,7 @@ export default function App() {
         </div>
       </div>}
 
-      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
+      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
       {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
       {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
       {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول المدير عبر Supabase</h3><input placeholder="البريد الإلكتروني للمدير" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin} disabled={adminBusy}>{adminBusy ? 'جاري التحقق...' : 'دخول'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
