@@ -124,7 +124,7 @@ function route(url) {
   return { resource: toResource(segments[1]), id: segments[2] };
 }
 
-export default async function handler(req, res) {
+export async function handleApiRequest(req, res, makeDatabase = database) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Vary', 'Authorization');
   res.setHeader('Allow', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
@@ -133,12 +133,12 @@ export default async function handler(req, res) {
 
   try {
     const { resource, id } = route(req.url);
-    if (resource === 'customer') return handleCustomerRequest(req, res, database());
+    if (resource === 'customer') return handleCustomerRequest(req, res, makeDatabase());
     if (!RESOURCES.has(resource) || (id && !/^\d+$/.test(id))) return errorResponse(res, 404, 'Unknown resource');
     if (['POST','PUT','PATCH','DELETE'].includes(req.method) && ((req.method === 'POST' && id) || (req.method !== 'POST' && !id))) {
       return errorResponse(res, 405, 'Invalid operation');
     }
-    const db = database();
+    const db = makeDatabase();
     const identity = await getIdentity(db, req);
     if (identity?.invalid) return errorResponse(res, 401, 'Invalid or expired session');
 
@@ -178,3 +178,6 @@ export default async function handler(req, res) {
     return errorResponse(res, 500, 'Database operation failed');
   }
 }
+
+// Vercel invokes the unchanged default export; tests inject a fake database.
+export default function handler(req, res) { return handleApiRequest(req, res); }
