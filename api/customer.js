@@ -73,6 +73,20 @@ function serialNumber(orders) {
   while (orders.some(o => o.serialNumber === serial));
   return serial;
 }
+async function verifyRegistrationCaptcha(token, req) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) throw new Error('Turnstile is not configured');
+  if (typeof token !== 'string' || token.length < 20 || token.length > 2048) return false;
+  const payload = new URLSearchParams({secret, response:token});
+  const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  if (ip && /^[0-9a-f:.]+$/i.test(ip)) payload.set('remoteip', ip);
+  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method:'POST', body:payload, signal:AbortSignal.timeout(8000)
+  });
+  if (!response.ok) return false;
+  const result = await response.json();
+  return result.success === true;
+}
 function checkPdf(input) {
   if (typeof input !== 'string' || input.length > 2_800_000) throw new Error('ملف PDF أكبر من الحد المسموح');
   const match = /^data:application\/pdf;base64,([A-Za-z0-9+/]+={0,2})$/.exec(input);
@@ -111,7 +125,7 @@ function validLines(lines, products, tier) {
   });
 }
 
-export async function handleCustomerRequest(req, res, db, authFactory = publicAuthClient) {
+export async function handleCustomerRequest(req, res, db, authFactory = publicAuthClient, captchaVerifier = verifyRegistrationCaptcha) {
   const parts = new URL(req.url, 'https://elmarwa.local').pathname.split('/').filter(Boolean);
   const action = parts[2];
   const fileOrderId = parts[3];
@@ -138,11 +152,12 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       if ((current.clients || []).some(c => c.phone === phone)) {
         return respond(res, 409, 'الرقم مسجل بالفعل. الحسابات القديمة تحتاج إعادة تفعيل آمنة.');
       }
+      const verifiedCaptcha = await captchaVerifier(captchaToken, req);
+      if (!verifiedCaptcha) return respond(res, 400, 'التحقق الأمني لم ينجح؛ حاول مرة أخرى');
       const auth = authFactory();
       const { error } = await auth.auth.signUp({
         phone: toE164(phone), password,
         options: {
-          captchaToken,
           data: {elmarwa_name:name, elmarwa_company:company, elmarwa_address:address}
         }
       });
