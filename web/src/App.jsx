@@ -5,6 +5,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const TOKEN_KEY = 'elmarw_admin_access_token'
 const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
 const CAPTCHA_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
+const CUSTOMER_SIGNUP_ENABLED = import.meta.env.VITE_ENABLE_CUSTOMER_SIGNUP === 'true'
 const USE_DIRECT_PDF_UPLOAD = import.meta.env.VITE_ENABLE_DIRECT_PDF_UPLOAD === 'true'
 // Never insert customer-controlled text directly into print-window HTML.
 const escapeStickerHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -364,7 +365,7 @@ export default function App() {
     setOrders(await customerFetch(`${API}/customer/orders`).then(r=>r.json()))
   }
   const handleRegister = async () => {
-    if (!CAPTCHA_SITE_KEY) {
+    if (!CUSTOMER_SIGNUP_ENABLED || !CAPTCHA_SITE_KEY) {
       alert('التسجيل موقوف لحين إعداد حماية الموقع'); return
     }
     if (!captchaToken) { alert('أكمل التحقق من الأمان أولاً'); return }
@@ -887,7 +888,7 @@ export default function App() {
         <button className="elmarwa-brand" onClick={()=>{setSelectedSub(null);setCatalogCategory('all');setCatalogSearch('')}} style={{background:'none',border:'none',padding:0,textAlign:'right'}}><strong>المروة للطباعة</strong><small>معرض المنتجات وإدارة الأوردرات</small></button>
         <div className="elmarwa-header-actions">
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
-          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); setCart([]); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
+          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => { if (CUSTOMER_SIGNUP_ENABLED) setShowForm(true); else alert('تسجيل العملاء الجدد متوقف مؤقتًا لحين إتمام تأمين النظام. تواصل مع إدارة المروة لتفعيل حسابك.') }}>{CUSTOMER_SIGNUP_ENABLED ? 'تسجيل' : 'التسجيل متوقف مؤقتًا'}</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); setCart([]); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
         </div>
       </header>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
