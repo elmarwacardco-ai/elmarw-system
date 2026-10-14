@@ -52,14 +52,17 @@ export default async function handler(req, res) {
       .replace(/^\/api\/?/, '')
       .split('/')[0] || 'categories';
 
-    if (!allowedKeys.has(key)) {
+    // Normalize the lowercase React route to the existing camelCase data key.
+    const resourceKey = key === 'subcategories' ? 'subCategories' : key;
+
+    if (!allowedKeys.has(resourceKey)) {
       return res.status(404).json({
         error: 'Unknown resource'
       });
     }
 
     // السماح بإضافة التصنيفات الرئيسية فقط
-    if (req.method === 'POST' && key !== 'categories') {
+    if (req.method === 'POST' && resourceKey !== 'categories') {
       return res.status(405).json({
         error: 'Write operations are not enabled for this resource'
       });
@@ -156,7 +159,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const items = record?.data?.[key] ?? [];
+    const items = record?.data?.[resourceKey] ?? [];
 
     if (!Array.isArray(items)) {
       return res.status(500).json({
