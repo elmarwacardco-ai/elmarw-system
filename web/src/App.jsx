@@ -209,16 +209,19 @@ export default function App() {
     }
   }, [showForm])
 
+  const loadPublicCatalog = async () => {
+    const resources = ['categories','subcategories','products']
+    const setters = [setCategories,setSubCategories,setProducts]
+    const results = await Promise.allSettled(resources.map(apiReadPublic))
+    results.forEach((result,index) => {
+      if (result.status === 'fulfilled') setters[index](result.value)
+      else console.error('Public catalog load failed:', result.reason)
+    })
+  }
   useEffect(() => {
-    // Public storefront only loads catalog data. No customer or employee data is exposed.
-    Promise.allSettled(['categories','subcategories','products'].map(key => apiReadPublic(key)))
-      .then(results => {
-        const setters = [setCategories, setSubCategories, setProducts]
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled') setters[index](result.value)
-          else console.error('Public catalog load failed:', result.reason)
-        })
-      })
+    // Don't overwrite a restored admin/VIP catalog with anonymous B prices.
+    if (sessionStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(CUSTOMER_TOKEN_KEY)) return
+    loadPublicCatalog()
   }, [])
 
   useEffect(() => {
@@ -233,6 +236,7 @@ export default function App() {
       console.warn('Customer session expired:', error.message)
       sessionStorage.removeItem(CUSTOMER_TOKEN_KEY)
       setLoggedClient(null)
+      loadPublicCatalog()
     })
   }, [])
 
@@ -247,7 +251,7 @@ export default function App() {
         } })
         setShowAdmin(true)
         loadAll(token)
-      }).catch(() => sessionStorage.removeItem(TOKEN_KEY))
+      }).catch(() => { sessionStorage.removeItem(TOKEN_KEY); loadPublicCatalog() })
     }
     const nt = localStorage.getItem('notifications')
     if (nt) { try { setNotifications(JSON.parse(nt)) } catch {} }
@@ -599,7 +603,7 @@ export default function App() {
         <div className="admin-sidebar" style={{ width: '260px', background: '#0f172a', color: 'white', padding: '20px 10px', position:'sticky', top:0, height:'100vh', overflowY:'auto', boxSizing:'border-box' }}>
           <h3 style={{textAlign: 'center'}}>المروة ✅ - {loggedEmployee?.name}</h3>
           {(() => { let perms = loggedEmployee?.permissions; try{ if(typeof perms==='string') perms=JSON.parse(perms) }catch{}; const isAdmin = loggedEmployee?.name === 'المدير العام'; const can = (k) => isAdmin ||!!perms?.[k]; return (<div className="admin-menu">{can('dashboard') && <button onClick={()=> setAdminTab('dashboard')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='dashboard'?'#1e40af':'transparent', color:'white'}}>📊 تحكم</button>}{can('orders') && <button onClick={()=> setAdminTab('orders')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='orders'?'#1e40af':'transparent', color:'white'}}>📦 اوردرات ({orders.length})</button>}{can('shipping') && <button onClick={()=> setAdminTab('operation')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='operation'?'#16a34a':'transparent', color:'white', fontWeight:'bold'}}>⚙️ التشغيل ({folders.length} فولدر)</button>}{can('orders') && <><button onClick={()=> setAdminTab('accounts')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='accounts'?'#0ea5e9':'transparent', color:'white', fontWeight:'bold'}}>💰 الحسابات</button><button onClick={()=> setAdminTab('deliveryAccounts')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='deliveryAccounts'?'#475569':'transparent', color:'white', fontWeight:'bold'}}>🚚 حسابات التسليمات</button></>}{can('clients') && <button onClick={()=> setAdminTab('clients')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='clients'?'#1e40af':'transparent', color:'white'}}>👥 عملاء ({clients.length})</button>}{can('categories') && <button onClick={()=> setAdminTab('categories')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='categories'?'#1e40af':'transparent', color:'white'}}>📁 تصنيفات</button>}{can('products') && <button onClick={()=> setAdminTab('products')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='products'?'#1e40af':'transparent', color:'white'}}>🏷️ منتجات ({products.length})</button>}{can('employees') && <button onClick={()=> setAdminTab('employees')} style={{width:'100%', textAlign:'right', padding:'12px', margin:'4px 0', borderRadius:'8px', border:'none', cursor:'pointer', background: adminTab==='employees'?'#f59e0b':'#334155', color:'white', fontWeight:'bold'}}>👷 موظفين ({employees.length})</button>}</div>)})()}
-          <button onClick={() => {sessionStorage.removeItem(TOKEN_KEY); setShowAdmin(false); setLoggedEmployee(null); setClients([]); setOrders([]); setEmployees([]); setFolders([])}} style={{...btnStyle, background: '#ef4444', color: 'white', width:'100%', marginTop:'20px'}}>🚪 خروج للرئيسية</button>
+          <button onClick={() => {sessionStorage.removeItem(TOKEN_KEY); setShowAdmin(false); setLoggedEmployee(null); setClients([]); setOrders([]); setEmployees([]); setFolders([]); setProducts([]); loadPublicCatalog()}} style={{...btnStyle, background: '#ef4444', color: 'white', width:'100%', marginTop:'20px'}}>🚪 خروج للرئيسية</button>
         </div>
         <div className="admin-main" style={{ flex: 1, padding: '15px', minWidth:0 }}>
           {adminTab==='dashboard' && <div><div style={{display:'flex', justifyContent:'space-between'}}><h2>لوحة التحكم</h2><button onClick={()=> setShowAdmin(false)} style={{...btnStyle, background:'#0f172a', color:'white'}}>🌐 الرئيسية</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'15px', marginTop:'15px'}}><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>👥 عملاء: {clients.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>📦 اوردرات: {orders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>⚙️ فولدرات: {folders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>🏷️ منتجات: {products.length}</div></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'12px', marginTop:'15px'}}>{orderStatuses.map(s=> <div key={s} style={{background:'white', padding:'12px', borderRadius:'10px', borderRight:`5px solid ${statusColor(s)}`}}>{s}: {orders.filter(o=> o.status===s).length}</div>)}</div></div>}
