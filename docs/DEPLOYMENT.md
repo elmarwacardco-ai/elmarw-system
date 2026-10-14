@@ -52,3 +52,12 @@ The automatic CI runs syntax, React build and unit tests against mocked data. It
 - The Vercel deployment's branch, runtime environment variables and live API cannot yet be verified from this connection. Do not infer that a green GitHub/Vercel status means a successful customer transaction.
 - Reconnect Vercel with the **waled4** scope or grant access to that scope, then inspect Preview deployments and confirm server-side Supabase settings without disclosing the values.
 - Existing customer signup, order placement, admin editing, staff auth and larger PDF paths still need end-to-end preview tests before merging.
+
+
+## Preview environment verification — 2026-10-15
+- Supabase publishable API key was set as `SUPABASE_ANON_KEY` on **Preview only** in Vercel, without exposing the value.
+- `ENABLE_CUSTOMER_SIGNUP=false` was explicitly set on **Preview only**; do not enable until SMS OTP, Turnstile and rate limits are configured and tested.
+- Existing `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` variables were present for Preview; presence alone does not validate their values.
+- Supabase atomic mutation create/update/delete passed for all seven collections inside one rolled-back transaction. Record counts were unchanged afterward.
+- Vercel deployment URL reads still return 403 during protected deployment alias lookup. Live HTTP end-to-end tests remain unverified; this is a release blocker.
+- The GitHub history credential leak and six public legacy tables without RLS remain unresolved. Do not merge this draft to production until the security and auth work is done.
