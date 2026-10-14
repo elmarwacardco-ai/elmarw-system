@@ -91,3 +91,19 @@ test('unverified signup stays disabled by default', async () => {
     else process.env.ENABLE_CUSTOMER_SIGNUP=old;
   }
 });
+
+test('customer cannot attach proof to another customer order', async () => {
+  const db=fakeDb();
+  const png='data:image/png;base64,'+Buffer.from('89504e470d0a1a0a','hex').toString('base64');
+  const res=await invoke(db,'/api/customer/payment-proof/2','POST',{fileData:png});
+  assert.equal(res.code,404);
+  assert.equal(db.getSaved(),null);
+});
+test('payment proof is saved only to the authenticated customer order', async () => {
+  const db=fakeDb();
+  const png='data:image/png;base64,'+Buffer.from('89504e470d0a1a0a','hex').toString('base64');
+  const res=await invoke(db,'/api/customer/payment-proof/1','POST',{fileData:png});
+  assert.equal(res.code,200);
+  assert.equal(db.getSaved().paymentProof,'صورة التحويل مرفوعة');
+  assert.match(db.getSaved().paymentProofPath,/^user-1\/.+\.png$/);
+});
