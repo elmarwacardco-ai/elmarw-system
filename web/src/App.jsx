@@ -781,8 +781,28 @@ export default function App() {
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
       {loadError && <div style={{padding:'12px',background:'#fee2e2',color:'#991b1b',direction:'rtl'}}>تعذر تحميل البيانات: {loadError}</div>}
       <main className="elmarwa-main">
+        {!selectedSub && <section className="elmarwa-hero">
+          <div><span className="hero-eyebrow">ELMARWA CARD CO · مطبعة المروة</span>
+            <h1>شغلك المطبوع بجودة تليق باسمك</h1>
+            <p>اختار المنتج والكمية المناسبة، اعرف السعر، وابعت ملف PDF وتابع الأوردر من مكان واحد.</p>
+            <div className="hero-features"><span>✓ أسعار B وVIP</span><span>✓ متابعة الأوردرات</span><span>✓ رفع ملفات الطباعة</span></div>
+          </div>
+          <div className="hero-panel"><strong>كل خدمات الطباعة في مكان واحد</strong>
+            <span>تصفح منتجاتنا واختار المقاس والكمية اللي تناسب شغلك.</span>
+            <button onClick={()=>document.getElementById('catalog-products')?.scrollIntoView({behavior:'smooth'})}>تصفح المنتجات ←</button>
+          </div>
+        </section>}
+        <div className="catalog-toolbar">
+          <div><h2 style={{margin:0,color:'#102749'}}>معرض المنتجات</h2><p style={{margin:0,color:'#6c8099',fontSize:13}}>ابحث عن المنتج أو اختار القسم المناسب</p></div>
+          <input className="catalog-search" type="search" value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)} placeholder="🔍 ابحث عن اسم المنتج..." aria-label="البحث في المنتجات"/>
+        </div>
+        {!selectedSub && <div className="catalog-categories" role="group" aria-label="أقسام المنتجات">
+          <button className={catalogCategory==='all'?'category-filter active':'category-filter'} onClick={()=>setCatalogCategory('all')}>كل الأقسام</button>
+          {categories.map(c=><button key={c.id} className={String(catalogCategory)===String(c.id)?'category-filter active':'category-filter'} onClick={()=>setCatalogCategory(String(c.id))}>{c.name}</button>)}
+        </div>}
+
         {!selectedSub && <>{categories.filter(cat=>catalogCategory==='all'||String(cat.id)===String(catalogCategory)).map(cat => { const catSubs = subCategories.filter(s => Number(s.categoryId) === Number(cat.id)); if(catSubs.length===0) return null; return (<div key={cat.id} style={{marginBottom: '24px'}}><h3 style={{ color: '#1e40af', fontSize:'20px', marginBottom:'10px' }}>{cat.name}</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>{catSubs.map(sub => (<div key={sub.id} className="elmarwa-subcategory-card" onClick={() => setSelectedSub(sub)} style={{ background: 'white', borderRadius: '14px', overflow: 'hidden', cursor: 'pointer', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', border:'1px solid #dbeafe' }}>{sub.image? <img src={sub.image} style={{width: '100%', height: '130px', objectFit: 'cover'}}/> : <div style={{height:'130px', background:'#f1f5f9', display:'flex', alignItems:'center', justifyContent:'center'}}>بدون صورة</div>}<div style={{padding: '10px', textAlign: 'center', fontWeight: 'bold', color:'#1e3a8a'}}>{sub.name}</div></div>))}</div></div>) })}<div id="catalog-products" className="catalog-section"><div className="catalog-section-title"><h2>🛍️ المنتجات المتاحة</h2><span style={{background:'#dbeafe',color:'#1e40af',padding:'5px 10px',borderRadius:'15px',fontSize:'12px',fontWeight:'bold'}}>{catalogVisible.length} منتج</span></div><div className="catalog-grid">{catalogVisible.map(p=><ProductCard key={p.id} product={p}/>)}</div>{catalogVisible.length===0&&<div style={{background:'white',padding:'30px',borderRadius:'12px',textAlign:'center'}}>لا توجد منتجات حالياً</div>}</div></>}
-        {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
+        {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><div className="catalog-grid" style={{marginTop:15}}>{catalogVisible.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).map(p => <ProductCard key={p.id} product={p} />)}{catalogVisible.filter(p => Number(p.subCategoryId) === Number(selectedSub.id)).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
       </main>
 
       {showMyOrders && <div style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.85)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:400, padding:'10px'}}>
