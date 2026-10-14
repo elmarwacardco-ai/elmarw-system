@@ -5,6 +5,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const TOKEN_KEY = 'elmarw_admin_access_token'
 const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
 const CAPTCHA_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
+const USE_DIRECT_PDF_UPLOAD = import.meta.env.VITE_ENABLE_DIRECT_PDF_UPLOAD === 'true'
 async function apiFetch(url, options = {}) {
   const token = sessionStorage.getItem(TOKEN_KEY)
   const headers = new Headers(options.headers || {})
@@ -464,18 +465,43 @@ export default function App() {
     }
     if (!cart.length) { alert('اختر منتجاً أولاً'); return }
     if (!orderFile) { alert('ارفع ملف PDF الخاص بالشغل أولاً'); return }
-    if (!orderFile.name.toLowerCase().endsWith('.pdf') || orderFile.size > 2 * 1024 * 1024) {
-      alert('الملف لازم يكون PDF وأقل من أو يساوي 2 ميجابايت'); return
+    const maxSize = (USE_DIRECT_PDF_UPLOAD ? 6 : 2) * 1024 * 1024
+    if (!orderFile.name.toLowerCase().endsWith('.pdf') || orderFile.size > maxSize || orderFile.size === 0) {
+      alert(`الملف لازم يكون PDF بحد أقصى ${USE_DIRECT_PDF_UPLOAD ? 6 : 2} ميجابايت`); return
     }
     setOrderBusy(true)
     try {
-      const fileData = await readFileAsDataUrl(orderFile)
+      const signature = await orderFile.slice(0, 5).text()
+      if (signature !== '%PDF-') throw new Error('محتوى الملف مش PDF صالح')
+      let filePayload
+      if (USE_DIRECT_PDF_UPLOAD) {
+        const request = await customerFetch(`${API}/customer/upload-url`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({fileName:orderFile.name,fileSize:orderFile.size})
+        })
+        const grant = await request.json()
+        if (!grant.uploadUrl || !grant.path || !SUPABASE_URL ||
+            new URL(grant.uploadUrl).origin !== new URL(SUPABASE_URL).origin) {
+          throw new Error('رابط الرفع غير صالح')
+        }
+        const formData = new FormData()
+        formData.append('cacheControl','0')
+        formData.append('',orderFile)
+        const uploaded = await fetch(grant.uploadUrl, {
+          method:'PUT', body:formData, headers:{'x-upsert':'false'}
+        })
+        if (!uploaded.ok) throw new Error('فشل رفع PDF إلى مساحة التخزين')
+        filePayload = {uploadPath:grant.path}
+      } else {
+        filePayload = {fileData:await readFileAsDataUrl(orderFile)}
+      }
       const response = await customerFetch(`${API}/customer/orders`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           items:cart.map(item => ({productId:item.productId,qty:item.qty})),
           workerName:orderClientName.trim(), notes:orderNotes,
-          paymentMethod:customerPaymentMethod, fileName:orderFile.name, fileData
+          paymentMethod:customerPaymentMethod, fileName:orderFile.name,
+          ...filePayload
         })
       })
       const created = await response.json()
