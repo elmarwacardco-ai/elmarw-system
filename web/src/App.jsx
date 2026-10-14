@@ -111,6 +111,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('')
   const [adminBusy, setAdminBusy] = useState(false)
   const [categoryBusy, setCategoryBusy] = useState(false)
+  const [orderBusy, setOrderBusy] = useState(false)
 
   const saveCategory = async () => {
     const name = categoryForm.name.trim()
@@ -260,6 +261,34 @@ export default function App() {
       alert('تعذر تنزيل الملف: ' + error.message)
     }
   }
+  const downloadPaymentProof = async (o) => {
+    try {
+      if (!o.paymentProofPath) throw new Error('لا توجد صورة محفوظة')
+      const response = await (showAdmin ? apiFetch : customerFetch)(`${API}/customer/proof/${o.id}`)
+      const file = await response.json()
+      window.open(file.url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      alert('تعذر عرض إثبات الدفع: ' + error.message)
+    }
+  }
+  const uploadPaymentProof = async (o, file) => {
+    if (!file) return
+    if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 1024*1024) {
+      alert('ارفع صورة PNG أو JPEG بحد أقصى 1 ميجابايت'); return
+    }
+    try {
+      const fileData = await readFileAsDataUrl(file)
+      const response = await customerFetch(`${API}/customer/payment-proof/${o.id}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({fileData,fileName:file.name})
+      })
+      const changed = await response.json()
+      setOrders(previous => previous.map(order => String(order.id) === String(o.id) ? changed : order))
+      alert('تم رفع صورة إثبات الدفع ✅')
+    } catch (error) {
+      alert('تعذر رفع إثبات الدفع: ' + error.message)
+    }
+  }
   const orderSearchText = (o) => `${o.clientName||''} ${o.clientPhone||''}`.toLowerCase()
   const visibleDashboardOrders = orders.filter(o => o.status !== 'تم التسليم' && o.status !== 'ملغي' && (!orderSearch.trim() || orderSearchText(o).includes(orderSearch.trim().toLowerCase())))
   const myOrdersList = orders.filter(o => loggedClient &&
@@ -354,6 +383,7 @@ export default function App() {
     setShowCart(true)
   }
   const handlePlaceOrder = async () => {
+    if (orderBusy) return
     if (!loggedClient || !sessionStorage.getItem(CUSTOMER_TOKEN_KEY)) {
       alert('سجل دخول العميل أولاً'); setShowLogin(true); return
     }
@@ -362,6 +392,7 @@ export default function App() {
     if (!orderFile.name.toLowerCase().endsWith('.pdf') || orderFile.size > 2 * 1024 * 1024) {
       alert('الملف لازم يكون PDF وأقل من أو يساوي 2 ميجابايت'); return
     }
+    setOrderBusy(true)
     try {
       const fileData = await readFileAsDataUrl(orderFile)
       const response = await customerFetch(`${API}/customer/orders`, {
@@ -380,6 +411,8 @@ export default function App() {
       alert('تم حفظ الطلب ✅ السيريال: ' + created.serialNumber)
     } catch (error) {
       alert('تعذر حفظ الطلب: ' + error.message)
+    } finally {
+      setOrderBusy(false)
     }
   }
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; if(price===undefined || price===null || price==='') return null; return price }
@@ -598,11 +631,11 @@ export default function App() {
               return (
                 <div key={o.id} style={{background:'white', borderRadius:'12px', marginBottom:'14px', border:'1px solid #e2e8f0', overflow:'hidden'}}>
                   <div style={{height:'5px', background: statusColor(o.status)}}></div>
-                  <div style={{background:'#000', color:'white', padding:'4px 10px', fontSize:'11px', fontWeight:900, display:'flex', justifyContent:'space-between'}}><span>سيريال: {o.serialNumber||o.id}</span><button onClick={()=> printSticker(o)} style={{background:'white', color:'black', border:'none', padding:'2px 8px', borderRadius:'10px', fontSize:'9px', fontWeight:'bold', cursor:'pointer'}}>🖨️ استيكر 4x2</button></div>
+                  <div style={{background:'#000', color:'white', padding:'4px 10px', fontSize:'11px', fontWeight:900, display:'flex', justifyContent:'space-between'}}><span>سيريال: {o.serialNumber||o.id}</span>{o.filePath && <button onClick={()=>downloadOrderFile(o)} style={{background:'white',border:'none',borderRadius:'10px',cursor:'pointer'}}>📎 تحميل PDF</button>}<button onClick={()=> printSticker(o)} style={{background:'white', color:'black', border:'none', padding:'2px 8px', borderRadius:'10px', fontSize:'9px', fontWeight:'bold', cursor:'pointer'}}>🖨️ استيكر 4x2</button></div>
                   <div style={{display:'flex'}}>
                     <div style={{width:'170px', background:'#f8fafc', borderLeft:'1px solid #e2e8f0', padding:'12px', textAlign:'center'}}>
                       <div style={{width:'130px', height:'130px', background:'white', borderRadius:'10px', border:'1px solid #e2e8f0', margin:'0 auto', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center'}}>{(()=>{ const prod = products.find(p=> String(p.id)===String(items[0]?.productId)); const img = items[0]?.image || prod?.image; return img? <img src={img} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : <span style={{fontSize:'11px', color:'#999'}}>صورة العمل</span> })()}</div>
-                      <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/*" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; await updateOrder(o.id, {paymentProof: file.name}); alert('تم الرفع ✅'); }}/></label></div>
+                      <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof} {o.paymentProofPath && <button onClick={()=>downloadPaymentProof(o)} style={{border:'none',color:'#1e3a8a',background:'transparent',cursor:'pointer'}}>عرض الصورة</button>}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/*" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; await uploadPaymentProof(o, file); }}/></label></div>
                     </div>
                     <div style={{flex:1}}>
                       <table style={{width:'100%', borderCollapse:'collapse', fontSize:'13px'}}><tbody>
@@ -624,7 +657,7 @@ export default function App() {
         </div>
       </div>}
 
-      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
+      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder} disabled={orderBusy}>{orderBusy ? 'جاري حفظ الطلب...' : 'إرسال الطلب الآن ✅'}</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
       {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
       {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
       {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول المدير عبر Supabase</h3><input placeholder="البريد الإلكتروني للمدير" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin} disabled={adminBusy}>{adminBusy ? 'جاري التحقق...' : 'دخول'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
