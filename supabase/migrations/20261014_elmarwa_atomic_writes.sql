@@ -1,5 +1,20 @@
 -- Run once in the Supabase SQL Editor before deploying this branch.
 -- Atomic operations on the existing single-row JSONB data store.
+-- Preserve existing production JSONB keys/data. Only add missing collections.
+-- Existing subcategory data is stored as camelCase "subCategories"; do NOT
+-- introduce a separate lowercase "subcategories" key here.
+UPDATE public.app_data
+SET data = jsonb_build_object(
+  'clients','[]'::jsonb,
+  'orders','[]'::jsonb,
+  'employees','[]'::jsonb,
+  'folders','[]'::jsonb
+) || data
+WHERE id=1
+  AND jsonb_typeof(data) = 'object'
+  AND (NOT data ? 'clients' OR NOT data ? 'orders'
+       OR NOT data ? 'employees' OR NOT data ? 'folders');
+
 CREATE OR REPLACE FUNCTION public.elmarwa_mutate(
   p_resource text, p_method text, p_id bigint DEFAULT NULL, p_payload jsonb DEFAULT '{}'::jsonb
 ) RETURNS jsonb
