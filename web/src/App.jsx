@@ -569,11 +569,20 @@ export default function App() {
     const remaining = total - paid
     const payStatus = o.paymentStatus || getPaymentStatus(total, paid)
     const saveOrderChanges = async () => {
-      const np = Math.max(0, Number(draftPaid)||0)
+      const np = Number(draftPaid)
+      if (!Number.isFinite(np) || np < 0 || np > total) {
+        alert('المبلغ المدفوع لازم يكون رقم من صفر لحد إجمالي الأوردر')
+        return
+      }
       setSaving(true)
-      await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod})
-      setSaving(false)
-      alert('تم حفظ تعديلات الأوردر بالكامل ✅')
+      try {
+        await updateOrder(o.id, {status:draftStatus,paidAmount:np,paymentStatus:getPaymentStatus(total,np),paymentMethod:draftMethod})
+        alert('تم حفظ تعديلات الأوردر ✅')
+      } catch (error) {
+        alert('تعذر حفظ التعديلات: '+error.message)
+      } finally {
+        setSaving(false)
+      }
     }
     return (
       <div id={`order-${o.id}`} style={{background:'white',borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
@@ -596,7 +605,7 @@ export default function App() {
           </div>
           <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>💰 الدفع الحالي</div><div style={{fontWeight:900,color:'#16a34a',fontSize:'12px'}}>مدفوع {paid}ج</div><div style={{fontSize:'10px',color:remaining>0?'#ef4444':'#16a34a'}}>باقي {remaining}ج</div><div style={{fontSize:'9px',marginTop:'3px'}}>{o.paymentMethod||'نقدي'} • {payStatus}</div></div>
           <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📅 المواعيد</div><div style={{fontSize:'10px',fontWeight:800}}>تنفيذ: {o.executionDate||'-'}</div><div style={{fontSize:'10px',fontWeight:800}}>جاهز: {o.readyDate||'-'}</div></div>
-          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📎 ملف العميل</div><div style={{fontSize:'9px',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o.fileName||'بدون ملف'}</div><button disabled={!o.fileData} onClick={()=>downloadOrderFile(o)} style={{...btnStyle,background:o.fileData?'#2563eb':'#94a3b8',color:'white',margin:'5px 0 0',padding:'5px 8px',fontSize:'10px',width:'100%'}}>⬇️ تحميل الملف</button></div>
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📎 ملف العميل</div><div style={{fontSize:'9px',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o.fileName||'بدون ملف'}</div><button disabled={!o.fileData && !o.filePath} onClick={()=>downloadOrderFile(o)} style={{...btnStyle,background:o.fileData||o.filePath?'#2563eb':'#94a3b8',color:'white',margin:'5px 0 0',padding:'5px 8px',fontSize:'10px',width:'100%'}}>⬇️ تحميل PDF</button></div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr 1fr',gap:'7px',padding:'8px 10px',background:'#f8fafc',borderTop:'1px solid #eef2f7'}}>
           <div><label style={{fontSize:'9px',fontWeight:900}}>🔄 الحالة الجديدة</label><select value={draftStatus} onChange={e=>setDraftStatus(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px',border:`2px solid ${statusColor(draftStatus)}`}}>{orderStatuses.map(st=><option key={st} value={st}>{st}</option>)}</select></div>
