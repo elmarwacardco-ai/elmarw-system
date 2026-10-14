@@ -29,7 +29,9 @@ function fakeDb(state = snapshot) {
     },
     storage: {from: () => ({
       upload:async()=>({error:null}), remove:async()=>({error:null}),
-      createSignedUrl:async()=>({data:{signedUrl:'https://signed.example/file'}})
+      createSignedUrl:async()=>({data:{signedUrl:'https://signed.example/file'}}),
+      createSignedUploadUrl:async path=>({data:{path,signedUrl:'https://signed.example/upload?token=abc'}}),
+      info:async()=>({data:{size:5000,contentType:'application/pdf',createdAt:new Date().toISOString()},error:null})
     })},
     rpc:async(name,args) => {
       assert.equal(name,'elmarwa_mutate');
@@ -185,4 +187,70 @@ test('failed CAPTCHA blocks SMS signup before touching Supabase Auth', async () 
     if(old===undefined) delete process.env.ENABLE_CUSTOMER_SIGNUP;
     else process.env.ENABLE_CUSTOMER_SIGNUP=old;
   }
+});
+
+const signedPath = 'user-1/01234567-89ab-4cde-8def-0123456789ab.pdf';
+async function withSignedUploads(callback) {
+  const old=process.env.ENABLE_DIRECT_PDF_UPLOAD;
+  process.env.ENABLE_DIRECT_PDF_UPLOAD='true';
+  try { await callback(); } finally {
+    if (old===undefined) delete process.env.ENABLE_DIRECT_PDF_UPLOAD;
+    else process.env.ENABLE_DIRECT_PDF_UPLOAD=old;
+  }
+}
+test('direct upload is disabled by default', async () => {
+  const old=process.env.ENABLE_DIRECT_PDF_UPLOAD;
+  delete process.env.ENABLE_DIRECT_PDF_UPLOAD;
+  try {
+    const res=await invoke(fakeDb(),'/api/customer/upload-url','POST',{fileName:'work.pdf',fileSize:1000});
+    assert.equal(res.code,503);
+  } finally {
+    if (old===undefined) delete process.env.ENABLE_DIRECT_PDF_UPLOAD;
+    else process.env.ENABLE_DIRECT_PDF_UPLOAD=old;
+  }
+});
+test('signed upload URL is created only for a logged in customer', async () => {
+  await withSignedUploads(async () => {
+    const denied=await invoke(fakeDb(),'/api/customer/upload-url','POST',{fileName:'work.pdf',fileSize:4000},'');
+    assert.equal(denied.code,401);
+    const granted=await invoke(fakeDb(),'/api/customer/upload-url','POST',{fileName:'work.pdf',fileSize:4000});
+    assert.equal(granted.code,200);
+    assert.match(granted.body.path,/^user-1\/[0-9a-f-]{36}\.pdf$/i);
+    assert.match(granted.body.uploadUrl,/^https:\/\//);
+  });
+});
+test('signed upload must be owned by the same customer', async () => {
+  await withSignedUploads(async () => {
+    const db=fakeDb();
+    const res=await invoke(db,'/api/customer/orders','POST',{
+      fileName:'art.pdf',uploadPath:'user-2/01234567-89ab-4cde-8def-0123456789ab.pdf',
+      items:[{productId:9,qty:1000}]
+    });
+    assert.equal(res.code,403);
+    assert.equal(db.getSaved(),null);
+  });
+});
+test('signed upload path is checked against private file metadata', async () => {
+  await withSignedUploads(async () => {
+    const db=fakeDb();
+    const res=await invoke(db,'/api/customer/orders','POST',{
+      fileName:'work.pdf',uploadPath:signedPath,
+      items:[{productId:9,qty:1000,total:0.01}],clientId:2,total:0.01
+    });
+    assert.equal(res.code,201);
+    assert.equal(db.getSaved().filePath,signedPath);
+    assert.equal(db.getSaved().total,55);
+    assert.equal(db.getSaved().clientId,1);
+  });
+});
+test('signed upload cannot be reused for a previously created order', async () => {
+  await withSignedUploads(async () => {
+    const state={...snapshot,orders:[...snapshot.orders,{id:4,clientId:1,filePath:signedPath}]};
+    const db=fakeDb(state);
+    const res=await invoke(db,'/api/customer/orders','POST',{
+      fileName:'work.pdf',uploadPath:signedPath,items:[{productId:9,qty:1000}]
+    });
+    assert.equal(res.code,409);
+    assert.equal(db.getSaved(),null);
+  });
 });
