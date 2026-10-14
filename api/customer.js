@@ -1,9 +1,17 @@
 import { randomUUID, randomInt } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 
 const BUCKET = 'elmarwa-orders';
 const PAYMENT_BUCKET = 'elmarwa-payment-proofs';
 const MAX_FILE = 2 * 1024 * 1024;
 const PHONE = /^01\d{9}$/;
+const toE164 = phone => '+20' + phone.slice(1);
+function publicAuthClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error('Public Supabase auth is not configured');
+  return createClient(url, key, {auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false}});
+}
 const QTY = new Set([1000,2000,3000,4000,5000,6000,7000,8000,9000,10000]);
 
 function respond(res, status, message) {
@@ -38,9 +46,9 @@ async function mutate(db, resource, method, id, payload) {
   if (error) throw error;
   return data;
 }
-async function login(db, phone, password) {
-  const { data, error } = await db.auth.signInWithPassword({
-    email: phone + '@customers.elmarwa.invalid', password
+async function login(db, phone, password, auth = publicAuthClient()) {
+  const { data, error } = await auth.auth.signInWithPassword({
+    phone: toE164(phone), password
   });
   if (error || !data?.session?.access_token) return null;
   const snapshot = await readData(db);
@@ -110,7 +118,7 @@ export async function handleCustomerRequest(req, res, db) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
     if (action === 'register' && req.method === 'POST') {
-      // Closed until CAPTCHA/SMS verification and abuse protection are configured.
+      // Only activate in Supabase after SMS verification and CAPTCHA are configured.
       if (process.env.ENABLE_CUSTOMER_SIGNUP !== 'true') {
         return respond(res, 503, 'تسجيل العملاء متوقف مؤقتًا لحين تفعيل الحماية');
       }
@@ -120,31 +128,73 @@ export async function handleCustomerRequest(req, res, db) {
       const name = String(body.name || '').trim();
       const company = String(body.company || '').trim();
       const address = String(body.address || '').trim();
+      const captchaToken = String(body.captchaToken || '');
       if (!PHONE.test(phone) || password.length < 8 || password.length > 72 ||
           !name || name.length > 120 || !company || company.length > 120 ||
-          !address || address.length > 250) return respond(res, 400, 'راجع بيانات التسجيل وكلمة المرور (8 أحرف على الأقل)');
+          !address || address.length > 250 || captchaToken.length < 20) {
+        return respond(res, 400, 'راجع البيانات وأكمل التحقق من الأمان وكلمة المرور');
+      }
       const current = await readData(db);
       if ((current.clients || []).some(c => c.phone === phone)) {
         return respond(res, 409, 'الرقم مسجل بالفعل. الحسابات القديمة تحتاج إعادة تفعيل آمنة.');
       }
-      const { data: created, error: createError } = await db.auth.admin.createUser({
-        email: phone + '@customers.elmarwa.invalid',
-        password, email_confirm: true, app_metadata: { role: 'elmarwa_customer' }
+      const auth = publicAuthClient();
+      const { error } = await auth.auth.signUp({
+        phone: toE164(phone), password,
+        options: {
+          captchaToken,
+          data: {elmarwa_name:name, elmarwa_company:company, elmarwa_address:address}
+        }
       });
-      if (createError) return respond(res, 409, 'تعذر إنشاء الحساب أو الرقم مسجل');
-      try {
-        await mutate(db,'clients','POST',null,{
-          name, phone, company, address, type: 'B', balance: 0,
-          authUserId: created.user.id, phoneVerified: false
-        });
-      } catch (error) {
-        await db.auth.admin.deleteUser(created.user.id).catch(() => null);
-        if (error.code === '23505') return respond(res, 409, 'الرقم مسجل بالفعل');
-        throw error;
+      if (error) return respond(res, 400, 'لم يتم إرسال رمز SMS. راجع إعدادات الرسائل وحاول مرة أخرى');
+      return res.status(202).json({verification_required:true});
+    }
+    if (action === 'verify' && req.method === 'POST') {
+      if (process.env.ENABLE_CUSTOMER_SIGNUP !== 'true') {
+        return respond(res, 503, 'تفعيل الحسابات الجديدة متوقف مؤقتًا');
       }
-      const session = await login(db, phone, password);
-      if (!session) return respond(res, 503, 'تم إنشاء الحساب لكن تعذر تسجيل الدخول');
-      return res.status(201).json(session);
+      const body = parse(req);
+      const phone = String(body.phone || '').trim();
+      const code = String(body.code || '').trim();
+      if (!PHONE.test(phone) || !/^\d{6,8}$/.test(code)) {
+        return respond(res, 400, 'رقم الهاتف أو رمز SMS غير صحيح');
+      }
+      const auth = publicAuthClient();
+      const { data, error } = await auth.auth.verifyOtp({
+        phone: toE164(phone), token: code, type: 'sms'
+      });
+      if (error || !data?.user?.id || !data?.session?.access_token ||
+          data.user.phone !== toE164(phone) || !data.user.phone_confirmed_at) {
+        return respond(res, 401, 'رمز SMS غير صحيح أو منتهي الصلاحية');
+      }
+      const current = await readData(db);
+      const existing = (current.clients || []).find(c => c.phone === phone);
+      if (existing && existing.authUserId !== data.user.id) {
+        return respond(res, 409, 'هذا الرقم مرتبط بحساب قديم؛ تواصل مع الإدارة لتفعيله');
+      }
+      if (!existing) {
+        const metadata = data.user.user_metadata || {};
+        const name = String(metadata.elmarwa_name || '').trim().slice(0,120);
+        const company = String(metadata.elmarwa_company || '').trim().slice(0,120);
+        const address = String(metadata.elmarwa_address || '').trim().slice(0,250);
+        if (!name || !company || !address) return respond(res, 400, 'بيانات التسجيل غير مكتملة');
+        try {
+          await mutate(db,'clients','POST',null,{
+            name, phone, company, address, type:'B', balance:0,
+            authUserId:data.user.id, phoneVerified:true
+          });
+        } catch (error) {
+          if (error.code !== '23505') throw error;
+          const reread = await readData(db);
+          if (!(reread.clients || []).some(c => c.phone === phone && c.authUserId === data.user.id)) {
+            return respond(res, 409, 'الرقم مستخدم في حساب آخر');
+          }
+        }
+      }
+      const after = await readData(db);
+      const client = (after.clients || []).find(c => c.phone === phone && c.authUserId === data.user.id);
+      if (!client) return respond(res, 503, 'تم التأكيد لكن تعذر تفعيل ملف العميل');
+      return res.status(201).json({access_token:data.session.access_token, client:safeClient(client)});
     }
     if (action === 'login' && req.method === 'POST') {
       const body = parse(req);
