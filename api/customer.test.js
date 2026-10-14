@@ -40,11 +40,11 @@ function fakeDb(state = snapshot) {
   };
   return db;
 }
-async function invoke(db, path, method='GET', body, token='good', authFactory) {
+async function invoke(db, path, method='GET', body, token='good', authFactory, captchaVerifier) {
   const req = {url:path,method,body,headers:{authorization:token ? 'Bearer ' + token : ''}};
   const res = {code:200,body:null,status(code){this.code=code;return this;},
     json(body){this.body=body;return this;},end(){return this;}};
-  await handleCustomerRequest(req,res,db,authFactory);
+  await handleCustomerRequest(req,res,db,authFactory,captchaVerifier);
   return res;
 }
 
@@ -125,11 +125,11 @@ test('signup requires CAPTCHA and starts SMS confirmation without creating clien
       company:'Prints',address:'Cairo',
       captchaToken:'abcdefghijklmnopqrstuvwxyz'
     };
-    const res=await invoke(db,'/api/customer/register','POST',body,'',authFactory);
+    const res=await invoke(db,'/api/customer/register','POST',body,'',authFactory,async token => token === body.captchaToken);
     assert.equal(res.code,202);
     assert.equal(res.body.verification_required,true);
     assert.equal(calls[0].phone,'+201099999999');
-    assert.equal(calls[0].options.captchaToken,body.captchaToken);
+    assert.equal(calls[0].options.data.elmarwa_name,'New Customer');
     assert.equal(db.getSaved(),null);
   } finally {
     if(prior===undefined) delete process.env.ENABLE_CUSTOMER_SIGNUP;
@@ -167,4 +167,22 @@ test('verified customer can sign in via normal public auth client without exposi
 test('signed PDF link belongs only to the signed in customer',async()=>{
   const res=await invoke(fakeDb(),'/api/customer/file/2');
   assert.equal(res.code,404);
+});
+
+test('failed CAPTCHA blocks SMS signup before touching Supabase Auth', async () => {
+  const old=process.env.ENABLE_CUSTOMER_SIGNUP;
+  process.env.ENABLE_CUSTOMER_SIGNUP='true';
+  let signups=0;
+  const authFactory=()=>({auth:{signUp:async()=>{signups++;return {error:null}}}});
+  try {
+    const res=await invoke(fakeDb(),'/api/customer/register','POST',{
+      phone:'01099999999',pass:'safePassword456',name:'Customer',company:'A',address:'Cairo',
+      captchaToken:'abcdefghijklmnopqrstuvwxyz'
+    },'',authFactory,async()=>false);
+    assert.equal(res.code,400);
+    assert.equal(signups,0);
+  } finally {
+    if(old===undefined) delete process.env.ENABLE_CUSTOMER_SIGNUP;
+    else process.env.ENABLE_CUSTOMER_SIGNUP=old;
+  }
 });
