@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { handleCustomerRequest } from './customer.js';
 
 const RESOURCES = new Set(['clients', 'categories', 'subcategories', 'products', 'orders', 'employees', 'folders']);
 const PUBLIC_RESOURCES = new Set(['categories', 'subcategories', 'products']);
@@ -94,41 +95,19 @@ function updatedRecord(resource, previous, input) {
   return { ...previous, ...input, id: previous.id };
 }
 
-// Compare-and-swap on the complete JSON value avoids overwriting a concurrent admin edit.
-// If the row was changed between read and write, retry with the new snapshot.
+// Database RPC locks the JSONB row so concurrent writes cannot erase each other.
+// Apply supabase/migrations/20261014_elmarwa_atomic_writes.sql before deploying.
 async function mutate(db, resource, method, recordId, payload) {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const snapshot = await readSnapshot(db);
-    const key = storedKey(snapshot, resource);
-    const collection = snapshot[key] ?? [];
-    if (!Array.isArray(collection)) throw new Error('Invalid app_data collection');
-    let changed, record;
-    if (method === 'POST') {
-      const nextId = collection.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1;
-      record = { ...payload, id: nextId };
-      changed = [...collection, record];
-    } else {
-      const index = collection.findIndex(item => String(item.id) === String(recordId));
-      if (index < 0) return { notFound: true };
-      record = collection[index];
-      if (method === 'DELETE') {
-        changed = collection.filter((_, i) => i !== index);
-      } else {
-        record = updatedRecord(resource, record, payload);
-        changed = collection.map((item, i) => i === index ? record : item);
-      }
-    }
-    const newData = { ...snapshot, [key]: changed };
-    const { data: committed, error } = await db.from('app_data')
-      .update({ data: newData })
-      .eq('id', 1)
-      .eq('data', JSON.stringify(snapshot))
-      .select('id')
-      .maybeSingle();
-    if (error) throw error;
-    if (committed) return { record, deleted: method === 'DELETE' };
+  const { data, error } = await db.rpc('elmarwa_mutate', {
+    p_resource: resource, p_method: method, p_id: recordId ? Number(recordId) : null,
+    p_payload: payload
+  });
+  if (error) {
+    if (error.code === 'P0002') return { notFound: true };
+    if (error.code === '23505') return { conflict: true };
+    throw error;
   }
-  return { conflict: true };
+  return { record: data, deleted: method === 'DELETE' };
 }
 function route(url) {
   const segments = new URL(url, 'https://elmarwa.local').pathname.split('/').filter(Boolean);
@@ -144,6 +123,7 @@ export default async function handler(req, res) {
 
   try {
     const { resource, id } = route(req.url);
+    if (resource === 'customer') return handleCustomerRequest(req, res, database());
     if (!RESOURCES.has(resource) || (id && !/^\d+$/.test(id))) return errorResponse(res, 404, 'Unknown resource');
     if (['POST','PUT','PATCH','DELETE'].includes(req.method) && ((req.method === 'POST' && id) || (req.method !== 'POST' && !id))) {
       return errorResponse(res, 405, 'Invalid operation');
@@ -183,7 +163,8 @@ export default async function handler(req, res) {
     if (outcome.conflict) return errorResponse(res, 409, 'Concurrent update; retry');
     return res.status(req.method === 'POST' ? 201 : 200).json(outcome.deleted ? { success: true } : outcome.record);
   } catch (error) {
-    console.error('API error:', error.message);
+    console.error('API error:', error.code || error.message);
+    if (error.code === 'PGRST202') return errorResponse(res, 503, 'Missing elmarwa_mutate migration');
     return errorResponse(res, 500, 'Database operation failed');
   }
 }
