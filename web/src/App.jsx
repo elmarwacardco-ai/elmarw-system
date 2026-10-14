@@ -632,7 +632,62 @@ export default function App() {
           <button onClick={() => {sessionStorage.removeItem(TOKEN_KEY); setShowAdmin(false); setLoggedEmployee(null); setClients([]); setOrders([]); setEmployees([]); setFolders([]); setProducts([]); loadPublicCatalog()}} style={{...btnStyle, background: '#ef4444', color: 'white', width:'100%', marginTop:'20px'}}>🚪 خروج للرئيسية</button>
         </div>
         <div className="admin-main" style={{ flex: 1, padding: '15px', minWidth:0 }}>
-          {adminTab==='dashboard' && <div><div style={{display:'flex', justifyContent:'space-between'}}><h2>لوحة التحكم</h2><button onClick={()=> setShowAdmin(false)} style={{...btnStyle, background:'#0f172a', color:'white'}}>🌐 الرئيسية</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'15px', marginTop:'15px'}}><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>👥 عملاء: {clients.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>📦 اوردرات: {orders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>⚙️ فولدرات: {folders.length}</div><div style={{background:'white', padding:'20px', borderRadius:'12px'}}>🏷️ منتجات: {products.length}</div></div><div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'12px', marginTop:'15px'}}>{orderStatuses.map(s=> <div key={s} style={{background:'white', padding:'12px', borderRadius:'10px', borderRight:`5px solid ${statusColor(s)}`}}>{s}: {orders.filter(o=> o.status===s).length}</div>)}</div></div>}
+          {adminTab==='dashboard' && (() => {
+            const active = orders.filter(o => !['تم التسليم','ملغي'].includes(o.status))
+            const collected = orders.reduce((sum,o) => sum + (Number(o.paidAmount)||0),0)
+            const outstanding = orders.reduce((sum,o) => sum + Math.max(0,(Number(o.total)||0)-(Number(o.paidAmount)||0)),0)
+            const recent = [...orders].sort((a,b)=>Number(b.id||0)-Number(a.id||0)).slice(0,7)
+            const metrics = [
+              {label:'أوردرات مفتوحة',value:active.length,icon:'📦',hint:'طلبات لم يتم تسليمها بعد'},
+              {label:'العملاء المسجلون',value:clients.length,icon:'👥',hint:'عدد العملاء داخل النظام'},
+              {label:'المبالغ المحصلة',value:collected.toLocaleString('ar-EG')+' ج',icon:'💳',hint:'إجمالي المبالغ المدفوعة'},
+              {label:'المبالغ المتبقية',value:outstanding.toLocaleString('ar-EG')+' ج',icon:'📊',hint:'إجمالي المبالغ المستحقة'}
+            ]
+            return <section aria-label="لوحة التحكم">
+              <div className="admin-dashboard-heading">
+                <div><h2>لوحة التحكم</h2><p>ملخص الأوردرات والتشغيل والحسابات</p></div>
+                <button onClick={()=>setShowAdmin(false)} style={{...btnStyle,background:'#164b96',color:'#fff',margin:0}}>🌐 عرض الموقع</button>
+              </div>
+              <div className="dashboard-stats">
+                {metrics.map(m=><div key={m.label} className="dashboard-stat">
+                  <div className="dashboard-stat-label"><span>{m.label}</span><i aria-hidden="true">{m.icon}</i></div>
+                  <div className="dashboard-stat-number">{m.value}</div>
+                  <div className="dashboard-stat-hint">{m.hint}</div>
+                </div>)}
+              </div>
+              <section className="dashboard-section">
+                <div className="dashboard-section-title"><h3>حالة الشغل</h3><small>{orders.length} أوردر إجمالي</small></div>
+                <div className="dashboard-status-grid">
+                  {orderStatuses.map(st=>{
+                    const count=orders.filter(o=>o.status===st).length
+                    return <button key={st} className="dashboard-status" onClick={()=>{setOrdersStatusFilter(st);setAdminTab('orders')}}>
+                      <small>{st}</small><strong>{count.toLocaleString('ar-EG')}</strong>
+                      <div className="dashboard-status-bar"><span className="dashboard-status-fill" style={{width:`${orders.length ? count/orders.length*100 : 0}%`,background:statusColor(st)}} /></div>
+                    </button>
+                  })}
+                </div>
+              </section>
+              <section className="dashboard-section">
+                <div className="dashboard-section-title"><h3>آخر الأوردرات</h3><button onClick={()=>{setOrdersStatusFilter('الكل');setAdminTab('orders')}} style={{...btnStyle,padding:'8px 12px',margin:0,background:'#e8f1ff',color:'#1b4f9f',fontSize:12}}>عرض الكل ←</button></div>
+                {recent.length===0 ? <div className="elmarwa-empty">مفيش أوردرات مسجلة حاليًا</div> :
+                  <div className="dashboard-recent-orders"><table>
+                    <thead><tr><th>السيريال</th><th>العميل</th><th>الإجمالي</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+                    <tbody>{recent.map(o=><tr key={o.id} onClick={()=>{setOrdersStatusFilter('الكل');setOrderSearch(String(o.clientPhone||o.clientName||''));setAdminTab('orders')}} title="عرض أوردرات العميل">
+                      <td style={{fontWeight:800,color:'#1b4f9f'}}>{o.serialNumber||o.id}</td><td>{o.clientName||'غير محدد'}</td>
+                      <td>{(Number(o.total)||0).toLocaleString('ar-EG')} ج</td>
+                      <td><span className="elmarwa-status-chip" style={{background:statusColor(o.status)+'20',color:statusColor(o.status)}}>{o.status||'جديد'}</span></td>
+                      <td>{o.date||'-'}</td>
+                    </tr>)}</tbody>
+                  </table></div>}
+              </section>
+              <section className="dashboard-section">
+                <div className="dashboard-section-title"><h3>إجراءات سريعة</h3></div>
+                <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                  {[['📦 الأوردرات','orders'],['⚙️ التشغيل','operation'],['👥 العملاء','clients'],['🏷️ المنتجات','products'],['💰 الحسابات','accounts']].map(([label,tab])=><button key={tab} onClick={()=>setAdminTab(tab)} style={{...btnStyle,background:'#eaf2ff',color:'#173d75',margin:0,padding:'10px 15px'}}>{label}</button>)}
+                </div>
+              </section>
+            </section>
+          })()}
 
           {adminTab==='orders' && <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',flexWrap:'wrap'}}><div><h2 style={{margin:'0 0 4px'}}>📦 الأوردرات</h2><div style={{fontSize:'12px',color:'#64748b'}}>بحث بالاسم أو رقم التليفون • الطلبات غير المسلّمة فقط</div></div><button onClick={()=>setShowAdmin(false)} style={{...btnStyle,background:'#0f172a',color:'white'}}>🌐 الرئيسية</button></div>
