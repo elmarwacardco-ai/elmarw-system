@@ -4,6 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 const BUCKET = 'elmarwa-orders';
 const PAYMENT_BUCKET = 'elmarwa-payment-proofs';
 const MAX_FILE = 2 * 1024 * 1024;
+const MAX_DIRECT_PDF = 6 * 1024 * 1024;
+const DIRECT_UPLOAD_ENABLED = () => process.env.ENABLE_DIRECT_PDF_UPLOAD === 'true';
 const PHONE = /^01\d{9}$/;
 const toE164 = phone => '+20' + phone.slice(1);
 function publicAuthClient() {
@@ -260,6 +262,21 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       const orders = (actor.snapshot.orders || []).filter(o => String(o.clientId) === String(actor.client.id));
       return res.status(200).json(orders);
     }
+    if (action === 'upload-url' && req.method === 'POST') {
+      if (!DIRECT_UPLOAD_ENABLED()) return respond(res, 503, 'رفع الملفات المباشر لم يتم تفعيله بعد');
+      const body = parse(req);
+      const filename = String(body.fileName || '');
+      const size = Number(body.fileSize);
+      if (!filename.toLowerCase().endsWith('.pdf') ||
+        filename.length > 180 || !Number.isSafeInteger(size) ||
+        size <= 0 || size > MAX_DIRECT_PDF) {
+        return respond(res, 400, 'مطلوب PDF بحجم لا يزيد عن 6 ميجابايت');
+      }
+      const path = actor.user.id + '/' + randomUUID() + '.pdf';
+      const {data, error} = await db.storage.from(BUCKET).createSignedUploadUrl(path);
+      if (error || !data?.signedUrl) return respond(res, 503, 'تعذر تجهيز مساحة رفع الملف');
+      return res.status(200).json({uploadUrl:data.signedUrl,path});
+    }
     if (action === 'payment-proof' && req.method === 'POST' && /^\d+$/.test(fileOrderId || '')) {
       const order = (actor.snapshot.orders || []).find(o =>
         String(o.id) === fileOrderId && String(o.clientId) === String(actor.client.id)
@@ -284,7 +301,11 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
     }
     if (action === 'orders' && req.method === 'POST') {
       const body = parse(req);
-      const bytes = checkPdf(body.fileData);
+      const useSignedUpload = body.uploadPath !== undefined;
+      if (useSignedUpload && !DIRECT_UPLOAD_ENABLED()) {
+        return respond(res, 503, 'رفع الملفات المباشر لم يتم تفعيله بعد');
+      }
+      const bytes = useSignedUpload ? null : checkPdf(body.fileData);
       const lines = validLines(body.items, actor.snapshot.products || [], actor.client.type);
       const filename = String(body.fileName || 'order.pdf').slice(0,180);
       if (!filename.toLowerCase().endsWith('.pdf')) return respond(res,400,'اسم الملف لازم ينتهي بـ PDF');
@@ -292,11 +313,34 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       const notes = String(body.notes || '').trim().slice(0,2000);
       const method = ['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'].includes(body.paymentMethod)
         ? body.paymentMethod : 'نقدي';
-      const path = actor.user.id + '/' + randomUUID() + '.pdf';
-      const { error: uploadError } = await db.storage.from(BUCKET).upload(path, bytes, {
-        contentType: 'application/pdf', upsert: false, cacheControl: '0'
-      });
-      if (uploadError) return respond(res,503,'تعذر حفظ PDF على مساحة التخزين الخاصة');
+      let path;
+      if (useSignedUpload) {
+        path = String(body.uploadPath || '');
+        const expected = new RegExp('^' + actor.user.id + '/[0-9a-f-]{36}\\.pdf$','i');
+        if (!expected.test(path)) return respond(res, 403, 'مسار الملف لا يتبع حسابك');
+        if ((actor.snapshot.orders || []).some(order => order.filePath === path)) {
+          return respond(res, 409, 'الملف مستخدم في طلب سابق');
+        }
+        const {data: info,error: infoError} = await db.storage.from(BUCKET).info(path);
+        if (infoError || !info || !Number.isFinite(Number(info.size)) ||
+            Number(info.size) < 5 || Number(info.size) > MAX_DIRECT_PDF) {
+          return respond(res, 400, 'الملف غير موجود أو حجمه غير مسموح');
+        }
+        const mime = String(info.contentType || info.mimeType || info.metadata?.mimetype || '');
+        if (mime && !mime.toLowerCase().startsWith('application/pdf')) {
+          return respond(res, 400, 'الملف المرفوع ليس PDF');
+        }
+        const timestamp = Date.parse(info.createdAt || info.created_at || '');
+        if (Number.isFinite(timestamp) && Date.now() - timestamp > 2 * 60 * 60 * 1000) {
+          return respond(res, 400, 'انتهت صلاحية الملف المرفوع؛ أعد رفعه');
+        }
+      } else {
+        path = actor.user.id + '/' + randomUUID() + '.pdf';
+        const {error: uploadError} = await db.storage.from(BUCKET).upload(path, bytes, {
+          contentType:'application/pdf',upsert:false,cacheControl:'0'
+        });
+        if (uploadError) return respond(res,503,'تعذر حفظ PDF على مساحة التخزين الخاصة');
+      }
       let saved;
       try {
         const now = new Date();
