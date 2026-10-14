@@ -45,6 +45,14 @@ BEGIN
     ) THEN
       RAISE EXCEPTION USING ERRCODE = '23505', MESSAGE = 'Phone already registered';
     END IF;
+    -- Prevent accidental replay of signed uploads and serial collisions under concurrency.
+    IF p_resource = 'orders' AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(collection) AS x(value)
+      WHERE (p_payload ? 'filePath' AND x.value->>'filePath' = p_payload->>'filePath')
+         OR (p_payload ? 'serialNumber' AND x.value->>'serialNumber' = p_payload->>'serialNumber')
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = '23505', MESSAGE = 'Order file or serial already exists';
+    END IF;
     SELECT COALESCE(MAX((x.value->>'id')::bigint),0)+1 INTO new_id FROM jsonb_array_elements(collection) AS x(value);
     target := (p_payload - 'id') || jsonb_build_object('id', new_id);
     updated := collection || jsonb_build_array(target);
@@ -78,9 +86,9 @@ GRANT EXECUTE ON FUNCTION public.elmarwa_mutate(text,text,bigint,jsonb) TO servi
 
 -- Private PDF attachments for new orders.
 INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
-VALUES ('elmarwa-orders','elmarwa-orders',false,2097152,ARRAY['application/pdf'])
+VALUES ('elmarwa-orders','elmarwa-orders',false,6291456,ARRAY['application/pdf'])
 ON CONFLICT (id) DO UPDATE
-SET public = false, file_size_limit = 2097152, allowed_mime_types = ARRAY['application/pdf'];
+SET public = false, file_size_limit = 6291456, allowed_mime_types = ARRAY['application/pdf'];
 
 -- Keep payment screenshots private as well.
 INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
