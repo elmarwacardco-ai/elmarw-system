@@ -16,6 +16,14 @@ async function apiFetch(url, options = {}) {
 }
 
 
+async function apiReadPublic(resource) {
+  const response = await fetch(`${API}/${resource}`)
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
+  if (!Array.isArray(body)) throw new Error('Invalid public catalog response')
+  return body
+}
+
 async function apiRead(resource, token) {
   const response = await apiFetch(`${API}/${resource}`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -130,6 +138,18 @@ export default function App() {
     })
     setLoadError(errors.length ? `تعذر تحميل: ${errors.join(', ')}` : '')
   }
+
+  useEffect(() => {
+    // Public storefront only loads catalog data. No customer or employee data is exposed.
+    Promise.allSettled(['categories','subcategories','products'].map(key => apiReadPublic(key)))
+      .then(results => {
+        const setters = [setCategories, setSubCategories, setProducts]
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') setters[index](result.value)
+          else console.error('Public catalog load failed:', result.reason)
+        })
+      })
+  }, [])
 
   useEffect(() => {
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
