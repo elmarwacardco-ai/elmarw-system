@@ -24,6 +24,12 @@ function database() {
   if (!url || !key) throw new Error('Supabase configuration is missing');
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
+function publicStaffAuthClient() {
+  const url=process.env.SUPABASE_URL
+  const key=process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  if(!url||!key)throw Error('Public Auth configuration missing')
+  return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
+}
 function errorResponse(res, status, message) { return res.status(status).json({ error: message }); }
 function toResource(value) {
   const key = String(value || '');
@@ -167,7 +173,7 @@ export async function handleApiRequest(req, res, makeDatabase = database) {
   try {
     const { resource, id } = route(req.url);
     if (resource === 'customer') return handleCustomerRequest(req, res, makeDatabase());
-    if (resource === 'staff') return handleStaffRequest(req, res, makeDatabase());
+    if (resource === 'staff') return handleStaffRequest(req, res, makeDatabase(), publicStaffAuthClient);
     // Disabled features must not contact Supabase or instantiate privileged clients.
     // This also gives the preview a stable 503 rather than a masked 500.
     if (resource === 'whatsapp-drafts' && process.env.ENABLE_WHATSAPP_DRAFTS !== 'true') {
