@@ -53,3 +53,26 @@ test('unlaunched WhatsApp draft API stays disabled in Preview',async()=>{
   const r=await get('/api/whatsapp-drafts');
   assert.equal(r.status,503,'WhatsApp drafts returned '+r.status+': '+String(r.body?.error||'no JSON error').slice(0,120));
 });
+
+test('deployed website serves RTL Arabic React entry and its JS asset',async()=>{
+  const home=await fetch(origin,{redirect:'manual',signal:AbortSignal.timeout(12000)})
+  assert.equal(home.status,200,'Website returned HTTP '+home.status)
+  assert.match(home.headers.get('content-type')||'',/text\/html/)
+  const html=await home.text()
+  assert.match(html,/<html[^>]+lang=["']ar["']/)
+  assert.match(html,/<div id=["']root["']><\/div>/)
+  const match=html.match(/<script[^>]+src=["'](\/assets\/[^"']+\.js)["']/)
+  assert.ok(match,'Bundled React JavaScript asset is not linked')
+  const bundle=await fetch(new URL(match[1],origin),{signal:AbortSignal.timeout(12000)})
+  assert.equal(bundle.status,200,'React bundle returned HTTP '+bundle.status)
+  assert.match(bundle.headers.get('content-type')||'',/javascript/)
+})
+test('anonymous request cannot create categories via production-style API',async()=>{
+  const response=await fetch(new URL('/api/categories',origin),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:'__SHOULD_NEVER_CREATE__'}),
+    signal:AbortSignal.timeout(12000)
+  })
+  assert.equal(response.status,401,'Unauthenticated category write returned '+response.status)
+})
