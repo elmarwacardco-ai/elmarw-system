@@ -185,7 +185,7 @@ export default function App() {
   }
 
 
-  const loadAll = async (token = sessionStorage.getItem(TOKEN_KEY)) => {
+  const loadAll = async (token = sessionStorage.getItem(TOKEN_KEY), identity = loggedEmployee) => {
     if (!token) return
 
     const resources = [
@@ -196,9 +196,19 @@ export default function App() {
       setClients, setCategories, setSubCategories,
       setProducts, setOrders, setFolders, setEmployees
     ]
-
+    const permitted = (resource) => {
+      if (identity?.role !== 'staff') return true
+      const p = identity.permissions || {}
+      if (resource === 'employees') return false
+      if (resource === 'clients') return p.clients === true
+      if (resource === 'categories' || resource === 'subcategories') return true // Public catalog
+      if (resource === 'products') return true // Public B prices
+      if (resource === 'orders') return p.orders === true || p.shipping === true
+      if (resource === 'folders') return p.orders === true || p.shipping === true
+      return false
+    }
     const results = await Promise.allSettled(
-      resources.map(key => apiRead(key, token))
+      resources.map(key => permitted(key) ? apiRead(key, token) : Promise.resolve([]))
     )
     const errors = []
     results.forEach((result, index) => {
@@ -540,7 +550,7 @@ export default function App() {
     setAdminTab(firstTab === 'shipping' ? 'orders' : firstTab)
     setStaffMustChangePassword(false)
     setShowAdmin(true)
-    loadAll(token)
+    loadAll(token, {...employee,role:'staff'})
   }
   const handleStaffLogin = async () => {
     if (staffBusy) return
