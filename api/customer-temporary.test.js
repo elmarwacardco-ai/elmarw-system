@@ -120,6 +120,16 @@ test('duplicate phone is rejected without creating any Auth user',async()=>{
     assert.equal(h.calls.created,0);
   });
 });
+test('existing international-format phone is rejected too',async()=>{
+  await withFlag(true,async()=>{
+    const h=harness();
+    h.state.clients.push({id:3,phone:'+20'+phone.slice(1),
+      authUserId:'existing',phoneVerified:true});
+    const response=await request(h,'register-temporary','POST',registration);
+    assert.equal(response.statusCode,409);
+    assert.equal(h.calls.created,0);
+  });
+});
 test('invalid CAPTCHA never creates an account',async()=>{
   await withFlag(true,async()=>{
     const h=harness();
