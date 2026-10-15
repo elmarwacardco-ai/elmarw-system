@@ -203,6 +203,35 @@ export default async function handler(req, res) {
       return res.status(200).json(my);
     }
 
+    // Clients may attach a receipt only to their own orders.
+    if (resource === 'my-orders' && method === 'PATCH' && segments[2] === 'payment') {
+      if (!auth.client) return res.status(401).json({ error: 'Login required' });
+      const id = Number(segments[1]);
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        return res.status(400).json({ error: 'Invalid order ID' });
+      }
+      const order = collection(data, 'orders').find(o =>
+        Number(o.id) === id && String(o.clientId) === String(auth.client.id)
+      );
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      const proofName = String(body.paymentProof || '').trim();
+      const proofData = String(body.paymentProofData || '');
+      if (!/\.(png|jpe?g|webp)$/i.test(proofName) || proofName.length > 180 ||
+          !/^data:image\/(png|jpeg|webp);base64,/.test(proofData)) {
+        return res.status(400).json({ error: 'ارفع صورة PNG أو JPEG أو WebP' });
+      }
+      const proofBytes = Buffer.from(proofData.split(',')[1], 'base64');
+      if (proofBytes.length < 10 || proofBytes.length > 1024 * 1024) {
+        return res.status(413).json({ error: 'حجم الإيصال لازم أقل من 1 ميجابايت' });
+      }
+      const saved = await mutate(db, 'orders', 'PATCH', {
+        paymentProof: proofName, paymentProofData: proofData,
+        paymentProofUploadedAt: new Date().toISOString()
+      }, id);
+      const { fileData, paymentProofData, ...safeOrder } = saved;
+      return res.status(200).json(safeOrder);
+    }
+
     if (resource === 'orders' && method === 'POST' && auth.client && !auth.admin) {
       if (!Array.isArray(body.items) || !body.items.length || body.items.length > 30) {
         return res.status(400).json({ error: 'اختر منتجاً واحداً على الأقل' });
