@@ -570,12 +570,13 @@ export default function App() {
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({password:staffNewPassword})
       })
-      const response = await apiFetch('/api/staff/me')
-      const {employee} = await response.json()
-      if (employee.mustChangePassword) throw new Error('لم يتم تفعيل كلمة المرور الجديدة')
+      // Supabase can revoke the old session when the password changes.
+      // A fresh login is safer than reusing the temporary-password session.
+      sessionStorage.removeItem(TOKEN_KEY)
       setStaffNewPassword('')
-      enterStaffDashboard(employee, sessionStorage.getItem(TOKEN_KEY))
-      alert('تم تغيير كلمة المرور وتفعيل حساب الموظف ✅')
+      setStaffMustChangePassword(false)
+      setShowStaffLogin(true)
+      alert('تم تغيير كلمة المرور بنجاح ✅ سجّل دخولك من جديد بكلمة المرور الجديدة')
     } catch (error) { alert('فشل تغيير كلمة المرور: ' + error.message) }
     finally { setStaffBusy(false) }
   }
