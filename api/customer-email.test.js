@@ -29,6 +29,7 @@ function harness(){
       assert.equal(email,member.email)
       assert.ok(password.length>=12)
       assert.equal(options.data.elmarwa_phone,'01012345678')
+      assert.equal(options.emailRedirectTo,'https://elmarw-preview-test.vercel.app')
       return {data:{user:member,session:null},error:null}
     },
     signInWithPassword:async({email,password})=>{
@@ -39,23 +40,28 @@ function harness(){
   }})
   return {db,state,member,authFactory,getMutations:()=>mutationCount}
 }
-async function request(db,route,method='GET',body={},authFactory,token=''){
+async function request(db,route,method='GET',body={},authFactory,token='',captchaVerifier=async value=>value==='approved-captcha-token-12345'){
   const req={url:'/api/customer/'+route,method,body,headers:{authorization:token?'Bearer '+token:''}}
   const res={statusCode:200,body:null,status(v){this.statusCode=v;return this},
     json(v){this.body=v;return this},end(){return this}}
-  await handleCustomerRequest(req,res,db,authFactory)
+  await handleCustomerRequest(req,res,db,authFactory,captchaVerifier)
   return res
 }
 async function withFlag(callback){
   const old=process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP
+  const oldVercel=process.env.VERCEL_URL
   process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP='true'
+  process.env.VERCEL_URL='elmarw-preview-test.vercel.app'
   try{await callback()}finally{
     if(old===undefined)delete process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP
     else process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP=old
+    if(oldVercel===undefined)delete process.env.VERCEL_URL
+    else process.env.VERCEL_URL=oldVercel
   }
 }
 const data={name:'First',email:'first@example.com',pass:'LongEnoughPassword123',
-  phone:'01012345678',company:'Cards',address:'Cairo'}
+  phone:'01012345678',company:'Cards',address:'Cairo',
+  captchaToken:'approved-captcha-token-12345'}
 test('unconfigured email signup stays closed',async()=>{
   const old=process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP
   delete process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP
@@ -112,5 +118,31 @@ test('an existing phone cannot be claimed through someone else\'s email signup',
    const res=await request(x.db,'register-email','POST',data,x.authFactory)
    assert.equal(res.statusCode,409)
    assert.equal(x.getMutations(),0)
+ })
+})
+
+test('email registration refuses missing or invalid bot verification',async()=>{
+ await withFlag(async()=>{
+   const x=harness()
+   const missing=await request(x.db,'register-email','POST',{...data,captchaToken:''},x.authFactory)
+   assert.equal(missing.statusCode,400)
+   const bad=await request(x.db,'register-email','POST',{...data,captchaToken:'captcha-token-not-approved'},x.authFactory)
+   assert.equal(bad.statusCode,400)
+   assert.equal(x.getMutations(),0)
+ })
+})
+test('email registration rejects untrusted redirect configuration',async()=>{
+ await withFlag(async()=>{
+   const x=harness()
+   const previous=process.env.CUSTOMER_EMAIL_REDIRECT_URL
+   process.env.CUSTOMER_EMAIL_REDIRECT_URL='https://test.example.invalid@evil.example/'
+   try{
+     const result=await request(x.db,'register-email','POST',data,x.authFactory)
+     assert.equal(result.statusCode,503)
+     assert.equal(x.getMutations(),0)
+   }finally{
+     if(previous===undefined)delete process.env.CUSTOMER_EMAIL_REDIRECT_URL
+     else process.env.CUSTOMER_EMAIL_REDIRECT_URL=previous
+   }
  })
 })
