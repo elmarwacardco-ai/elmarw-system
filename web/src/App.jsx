@@ -5,7 +5,7 @@ import { requireAdminSession } from './admin-session.js'
 import { saveEmployeeRecord } from './employee-save.js'
 import {
   loadGuestDraft, saveGuestDraft, clearGuestDraft, saveGuestPdf,
-  loadGuestPdf, clearGuestPdf, checkoutGate, buildWhatsAppHelpUrl
+  loadGuestPdf, clearGuestPdf, checkoutGate, buildWhatsAppHelpUrl, repriceCheckoutCart
 } from './guest-checkout.js'
 const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -188,6 +188,18 @@ export default function App() {
       setGuestDraftWarning('حفظ الأوردر مؤقتًا غير متاح. احتفظ بالصفحة مفتوحة.')
     }
   }, [guestDraftReady, cart, orderClientName, orderNotes, customerPaymentMethod])
+
+  // Recompute the displayed checkout total when the customer tier/catalog changes.
+  // The API performs its own authoritative pricing before creating any order.
+  useEffect(() => {
+    if (!loggedClient || !products.length || !cart.length) return
+    const revised = repriceCheckoutCart(cart, products, loggedClient)
+    if (revised.some((item, i) =>
+      item.price !== cart[i].price || item.total !== cart[i].total ||
+      Boolean(item.unavailable) !== Boolean(cart[i].unavailable))) {
+      setCart(revised)
+    }
+  }, [loggedClient, products, cart])
 
   const selectCheckoutFile = async file => {
     if (!file) return
@@ -680,6 +692,10 @@ export default function App() {
   }
   const handlePlaceOrder = async () => {
     if (orderBusy) return
+    if (loggedClient && repriceCheckoutCart(cart, products, loggedClient).some(item => item.unavailable)) {
+      alert('في منتج سعره مش متاح لنوع حسابك، احذفه أو راجع الإدارة قبل الإرسال.')
+      return
+    }
     const gate = checkoutGate({
       cart, pdf:orderFile, client:loggedClient,
       accessToken:sessionStorage.getItem(CUSTOMER_TOKEN_KEY)
@@ -744,6 +760,7 @@ export default function App() {
       setOrderBusy(false)
     }
   }
+  // Product price is refreshed for B / VIP after login; the server always prices again.
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; return Number.isFinite(Number(price)) && Number(price) > 0 ? price : null }
   const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
   const handleCreateFolder = async () => { if(!newFolderName.trim()){ alert('اكتب اسم الفولدر'); return } const newF = { name: newFolderName.trim(), date: new Date().toLocaleString('ar-EG'), status: 'جديد', orderIds: [] }; await apiFetch(`${API}/folders`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(newF)}); setNewFolderName(''); loadAll() }

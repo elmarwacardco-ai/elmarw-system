@@ -58,6 +58,22 @@ export function loadGuestDraft(storage, now=Date.now()) {
 export function clearGuestDraft(storage) {
   try { storage.removeItem(GUEST_DRAFT_KEY) } catch {}
 }
+export function repriceCheckoutCart(cart, products, client) {
+  if (!Array.isArray(cart) || !client || !Array.isArray(products)) return cart
+  return cart.map(item => {
+    const product = products.find(p => String(p.id) === String(item.productId))
+    if (!product) return item
+    let table = client.type === 'VIP' ? product.pricesVIP : product.pricesB
+    if (typeof table === 'string') {
+      try { table = JSON.parse(table) } catch { table = {} }
+    }
+    const newPrice = Number(table?.[item.qty])
+    if (!Number.isFinite(newPrice) || newPrice <= 0) {
+      return { ...item, unavailable:true, total:0 }
+    }
+    return { ...item, price:newPrice, total:newPrice, unavailable:false }
+  })
+}
 export function buildWhatsAppHelpUrl(number) {
   const digits=String(number||'').replace(/[^\d]/g,'')
   const formatted=/^01\d{9}$/.test(digits) ? '2'+digits : digits

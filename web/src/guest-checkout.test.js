@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   saveGuestDraft,loadGuestDraft,clearGuestDraft,checkoutGate,
-  buildWhatsAppHelpUrl,GUEST_DRAFT_KEY,GUEST_DRAFT_TTL_MS,saveGuestPdf
+  buildWhatsAppHelpUrl,repriceCheckoutCart,GUEST_DRAFT_KEY,GUEST_DRAFT_TTL_MS,saveGuestPdf
 } from './guest-checkout.js'
 const storage=()=>{const values=new Map();return {
   setItem:(key,value)=>values.set(key,value),
@@ -44,4 +44,16 @@ test('only a configured Egyptian WhatsApp number yields a help URL',()=>{
 test('invalid PDFs are rejected before opening IndexedDB',async()=>{
   await assert.rejects(saveGuestPdf(null,{name:'wrong.txt',size:10}),/Invalid PDF/)
   await assert.rejects(saveGuestPdf(null,{name:'oversize.pdf',size:7*1024*1024}),/Invalid PDF/)
+})
+
+test('VIP tier is re-priced after authentication; unavailable prices are flagged',()=>{
+  const products=[{id:12,pricesB:{1000:250},pricesVIP:{1000:180}}]
+  const b=repriceCheckoutCart(cart,products,{type:'B'})
+  const vip=repriceCheckoutCart(cart,products,{type:'VIP'})
+  assert.equal(b[0].total,250)
+  assert.equal(vip[0].total,180)
+  assert.equal(vip[0].unavailable,false)
+  const unpriced=repriceCheckoutCart(cart,[{id:12,pricesB:{},pricesVIP:{}}],{type:'VIP'})
+  assert.equal(unpriced[0].unavailable,true)
+  assert.equal(unpriced[0].total,0)
 })
