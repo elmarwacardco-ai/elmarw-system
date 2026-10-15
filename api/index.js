@@ -52,13 +52,19 @@ export default async function handler(req, res) {
       .replace(/^\/api\/?/, '')
       .split('/')[0] || 'categories';
 
-    if (!allowedKeys.has(key)) {
+    const customerProfileRoute = key === 'customer-profile';
+
+    if (!allowedKeys.has(key) && !customerProfileRoute) {
       return res.status(404).json({
         error: 'Unknown resource'
       });
     }
 
-    // السماح بإضافة التصنيفات الرئيسية فقط
+    // Customer profiles are read-only. The old generic API remains admin-only.
+    if (customerProfileRoute && req.method !== 'GET') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     if (req.method === 'POST' && key !== 'categories') {
       return res.status(405).json({
         error: 'Write operations are not enabled for this resource'
@@ -85,6 +91,26 @@ export default async function handler(req, res) {
       return res.status(401).json({
         error: 'Invalid or expired session'
       });
+    }
+
+    // Customer users only receive their own confirmed profile.
+    if (customerProfileRoute) {
+      if (!authData.user.email_confirmed_at) {
+        return res.status(403).json({ error: 'Confirm your email before signing in' });
+      }
+      const { data: profile, error: profileError } = await db
+        .from('customer_profiles')
+        .select('id,email,name,phone,company,address,type,balance')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+      if (profileError) {
+        console.error('Customer profile lookup failed:', profileError.message);
+        return res.status(500).json({ error: 'Customer profile lookup failed' });
+      }
+      if (!profile) {
+        return res.status(404).json({ error: 'Customer profile is not ready. Contact support.' });
+      }
+      return res.status(200).json(profile);
     }
 
     // التأكد من صلاحيات المدير
@@ -156,7 +182,20 @@ export default async function handler(req, res) {
       });
     }
 
-    const items = record?.data?.[key] ?? [];
+    let items = record?.data?.[key] ?? [];
+
+    if (key === 'clients' && Array.isArray(items)) {
+      // Keep legacy customers intact and show verified accounts in admin.
+      const { data: registered, error: customersError } = await db
+        .from('customer_profiles')
+        .select('id,email,name,phone,company,address,type,balance');
+      if (customersError) {
+        console.error('Verified customer list failed:', customersError.message);
+        return res.status(500).json({ error: 'Could not read verified customers' });
+      }
+      const existingIds = new Set(items.map(client => String(client.id)));
+      items = [...items, ...(registered || []).filter(client => !existingIds.has(String(client.id)))];
+    }
 
     if (!Array.isArray(items)) {
       return res.status(500).json({
