@@ -24,7 +24,7 @@ jobs:
           node --check lib/whatsapp-drafts.js
           node --check lib/staff.js
       - name: Run customer API tests
-        run: node --test api/customer.test.js api/customer-email.test.js api/security.test.js api/index.test.js api/whatsapp-drafts.test.js lib/staff.test.js
+        run: node --test api/customer.test.js api/customer-email.test.js api/customer-temporary.test.js api/security.test.js api/index.test.js api/whatsapp-drafts.test.js lib/staff.test.js
       - name: Validate manual WhatsApp contact links
         run: node --test web/src/whatsapp.test.js
       - name: Check pinned live preview API contract (required)
