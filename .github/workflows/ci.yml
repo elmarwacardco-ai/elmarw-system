@@ -1,0 +1,41 @@
+name: App checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            api/package-lock.json
+      - name: Install API dependencies
+        run: npm install --prefix api --no-audit --no-fund
+      - name: Syntax-check backend
+        run: |
+          node --check api/index.js
+          node --check api/customer.js
+          node --check lib/whatsapp-drafts.js
+          node --check lib/staff.js
+      - name: Run customer API tests
+        run: node --test api/customer.test.js api/customer-email.test.js api/security.test.js api/index.test.js api/whatsapp-drafts.test.js lib/staff.test.js
+      - name: Validate manual WhatsApp contact links
+        run: node --test web/src/whatsapp.test.js
+      - name: Check pinned live preview API contract (required)
+        env:
+          ELMARWA_SMOKE_URL: https://elmarw-5wz2wi6z2-waled4.vercel.app/
+        run: node --test api/preview-smoke.test.js
+      - name: Verify admin role is required before dashboard entry
+        run: node --test web/src/admin-session.test.js
+      - name: Test employee profile save and error handling
+        run: node --test web/src/employee-save.test.js
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: Build React app
+        run: npm run build --prefix web

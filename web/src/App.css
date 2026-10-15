@@ -1,184 +1,109 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
-
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
+/* Elmarwa Card Co — responsive Arabic light interface */
+.elmarwa-app { min-height: 100vh; background: #f5f8fd; color: #182d49; }
+.elmarwa-header {
+  background: #fff !important; color: #102749 !important;
+  border-bottom: 1px solid #e3eaf4; box-shadow: 0 2px 12px rgba(16,39,73,.045);
+  gap: 14px; flex-wrap: wrap; align-items: center; padding: 13px clamp(18px,3vw,56px) !important;
 }
-
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
+.elmarwa-brand { margin: 0; display:flex; flex-direction:column; gap:2px; }
+.elmarwa-brand strong {font-size: 22px; color: #0c2448; letter-spacing:-.5px; }
+.elmarwa-brand small { font-size: 11px; font-weight: 600; color:#62758e; }
+.elmarwa-header-actions { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.elmarwa-header-actions button {border:1px solid #dfe8f5 !important; box-shadow:none; padding:9px 13px !important; margin:0 !important; border-radius:12px !important;}
+.elmarwa-main { max-width: 1500px; width: 100%; padding: 25px clamp(16px,3vw,50px) 60px !important; margin:0 auto; background:transparent !important; }
+.elmarwa-hero {
+  display:grid; grid-template-columns: 1.6fr .85fr; gap:28px;
+  border-radius:26px; overflow:hidden; padding: clamp(24px,4vw,52px);
+  margin-bottom:26px; background: linear-gradient(125deg, #0c2448, #174688 74%, #2563eb);
+  color:#fff; position:relative;
+  box-shadow: 0 18px 40px rgba(17,57,118,.16);
 }
-
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
+.elmarwa-hero::after {content:''; position:absolute; width:275px; height:275px; border-radius:50%; left:-80px; top:-95px; background:#fff; opacity:.035;}
+.hero-eyebrow {font-size:12px; font-weight:700; color:#c5dcff; letter-spacing:.35px;}
+.elmarwa-hero h1 { font-size:clamp(27px,3.2vw,46px); margin:11px 0 14px; letter-spacing:-.8px; color:#fff; }
+.elmarwa-hero p {font-size:15px; color:#d8e7ff; max-width:620px; margin:0 0 22px;}
+.hero-features {display:flex; flex-wrap:wrap; gap:10px;}
+.hero-features span {font-size:12px; border:1px solid #ffffff38; border-radius:999px; padding:7px 11px; background:#ffffff15;}
+.hero-panel {position:relative; z-index:1; display:flex; flex-direction:column; justify-content:center; gap:14px; padding:23px; border:1px solid #ffffff30; border-radius:19px; background:#ffffff16;backdrop-filter:blur(7px);}
+.hero-panel strong {font-size:21px; color:#fff;}
+.hero-panel span {font-size:13px; color:#d8e7ff;}
+.hero-panel button {padding:13px 20px; color:#133c75; background:white; border:0; border-radius:12px; font-weight:800;}
+.catalog-toolbar {display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:13px; margin:0 0 20px;}
+.catalog-search {max-width:430px; flex:1; min-width:210px; padding:12px 16px; border:1px solid #d5e3f5; border-radius:14px; background:#fff; color:#122b4b;}
+.catalog-categories {display:flex; gap:10px; flex-wrap:wrap; margin-bottom:25px;}
+.category-filter {background:#fff; color:#274364; border:1px solid #dce6f3; border-radius:999px; padding:9px 17px; font-weight:700;}
+.category-filter.active {background:#1b4f9f; border-color:#1b4f9f; color:#fff;}
+.catalog-section {margin-top:26px;}
+.catalog-section-title {display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 14px;}
+.catalog-section-title h2,.catalog-section-title h3{margin:0;color:#102749;}
+.catalog-grid {display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:18px;}
+.elmarwa-product-card {
+  border:1px solid #e3eaf4 !important; border-radius:19px !important;
+  box-shadow:0 6px 23px rgba(16,47,90,.06) !important; overflow:hidden;
+  background:#fff; transition:transform .2s, box-shadow .2s;
 }
-
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
+.elmarwa-product-card:hover {transform:translateY(-3px); box-shadow:0 15px 30px rgba(16,47,90,.12) !important;}
+.elmarwa-product-image {height:185px !important; width:100%; object-fit:cover;}
+.elmarwa-product-placeholder {height:185px !important; background:linear-gradient(145deg,#eaf2ff,#f8fbff) !important; display:grid !important; place-items:center !important;color:#7a8eab;}
+.elmarwa-product-card h3 {line-height:1.5; font-size:16px !important; }
+.elmarwa-product-card button {border-radius:9px !important;}
+.elmarwa-subcategory-card {border-radius:18px !important;border:1px solid #e0e9f7 !important;box-shadow:0 5px 20px #17385d0a !important;transition:transform .18s,box-shadow .18s;}
+.elmarwa-subcategory-card:hover {transform:translateY(-3px); box-shadow:0 12px 22px #17385d15 !important;}
+.elmarwa-empty {background:#fff; border:1px dashed #cddbed; border-radius:18px; padding:40px; text-align:center; color:#62758e;}
+.admin-shell {background:#f5f8fd !important; color:#172f4b; }
+.admin-sidebar {background:#0b2346 !important; box-shadow:-4px 0 30px #10243e16; }
+.admin-sidebar h3 {color:#fff;font-size:20px;letter-spacing:-.4px;line-height:1.65;margin:10px 0 26px;}
+.admin-menu {display:grid;gap:3px;}
+.admin-menu button {font-weight:700; border-radius:11px !important; margin:2px 0 !important; padding:13px 14px !important; transition:background .15s;}
+.admin-menu button:hover {background:#1b4f9f !important;}
+.admin-main {padding:clamp(20px,2.6vw,42px) !important;}
+.admin-dashboard-heading {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:0 0 23px;}
+.admin-dashboard-heading h2 {font-size:clamp(23px,2.3vw,32px);font-weight:850;color:#11294a;margin:0 0 4px;}
+.admin-dashboard-heading p {margin:0;color:#687d96;font-size:13px;}
+.dashboard-stats {display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:14px;}
+.dashboard-stat {border:1px solid #e4ebf6;background:white;border-radius:18px;padding:19px;box-shadow:0 5px 18px #0a2c5608;}
+.dashboard-stat-label {font-size:13px;font-weight:650;color:#63748f;margin-bottom:15px;display:flex;align-items:center;justify-content:space-between;}
+.dashboard-stat-label i {font-style:normal;background:#eaf2ff;color:#1b4f9f;border-radius:10px;padding:7px;font-size:19px;}
+.dashboard-stat-number {font-size:clamp(27px,3vw,36px);line-height:1.1;font-weight:900;color:#10294d;}
+.dashboard-stat-hint {font-size:11px;color:#7e8fa4;margin-top:12px;}
+.dashboard-section {background:#fff;border:1px solid #e3eaf4;box-shadow:0 5px 18px #0a2c5607;border-radius:20px;padding:clamp(16px,2vw,24px);margin-top:18px;}
+.dashboard-section-title {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:15px;}
+.dashboard-section-title h3 {font-size:17px;color:#14315b;margin:0;}
+.dashboard-status-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
+.dashboard-status {border:1px solid #e3eaf4;background:#f9fbfe;border-radius:12px;padding:12px;cursor:pointer;text-align:right;}
+.dashboard-status strong {font-size:23px;color:#152f52;display:block;margin:7px 0 8px;}
+.dashboard-status small{color:#657c98;font-size:12px;font-weight:700;}
+.dashboard-status-bar {height:5px;border-radius:10px;background:#e5edf8;overflow:hidden;}
+.dashboard-status-fill {display:block;height:100%;border-radius:10px;}
+.dashboard-recent-orders {overflow-x:auto;}
+.dashboard-recent-orders table {width:100%;border-collapse:collapse;text-align:right;white-space:nowrap;}
+.dashboard-recent-orders th {font-size:12px;color:#74839a;font-weight:750;padding:11px 12px;border-bottom:1px solid #e6ecf4;background:#f8fbff;}
+.dashboard-recent-orders td {padding:13px 12px;border-bottom:1px solid #edf1f7;font-size:13px;}
+.dashboard-recent-orders tr:last-child td {border-bottom:0;}
+.dashboard-recent-orders tbody tr {cursor:pointer;}
+.dashboard-recent-orders tbody tr:hover {background:#f7faff;}
+.elmarwa-status-chip {display:inline-flex;align-items:center;border-radius:999px;font-weight:750;font-size:11px;padding:4px 10px;background:#eaf1ff;color:#1b4f9f;}
+@media (max-width:900px) {
+  .admin-sidebar {width:100% !important;height:auto !important;position:relative !important;}
+  .admin-shell {flex-direction:column !important;}
+  .admin-menu {display:flex !important;flex-wrap:nowrap;overflow:auto;gap:6px;padding-bottom:9px;grid-template-columns:none !important;}
+  .admin-menu button {min-width:135px; width:auto !important;text-align:center !important;}
+  .admin-main {padding:16px !important;}
+  .elmarwa-hero {grid-template-columns:1fr;}
+  .hero-panel {display:none;}
 }
-
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-#next-steps ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
-}
-
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
-}
-
-.ticks {
-  position: relative;
-  width: 100%;
-
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
-  }
-
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
-  }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
-  }
+@media (max-width:620px) {
+  .elmarwa-header {padding:12px 15px !important;}
+  .elmarwa-header-actions {width:100%;justify-content:flex-start;}
+  .elmarwa-header-actions button {flex:1; font-size:12px !important;}
+  .elmarwa-main {padding:18px 12px 45px !important;}
+  .elmarwa-hero {padding:25px 20px;border-radius:19px;}
+  .catalog-toolbar {align-items:stretch;}
+  .catalog-search {max-width:100%;}
+  .catalog-grid {grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:11px;}
+  .elmarwa-product-image,.elmarwa-product-placeholder {height:150px !important;}
+  .dashboard-stats {grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
+  .dashboard-stat {padding:14px;}
+  .dashboard-stat-number {font-size:26px;}
+  .dashboard-status-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
 }
