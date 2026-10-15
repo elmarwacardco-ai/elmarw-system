@@ -222,6 +222,20 @@ BEGIN
   IF file_meta IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Approved PDF does not exist';
   END IF;
+  -- Keep the production record bound to a real private PDF, not only a
+  -- filename kept in the draft JSON. Never reuse a file already on an order.
+  IF NOT EXISTS (
+    SELECT 1 FROM storage.objects
+    WHERE bucket_id = 'elmarwa-orders' AND name = d.approved_file_path
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Approved PDF missing from private storage';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(orders) t(value)
+    WHERE value->>'filePath' = d.approved_file_path
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23505', MESSAGE = 'Order PDF already used';
+  END IF;
   output_order := jsonb_build_object(
     'id',next_order_id,'serialNumber',serial,
     'executionDate',current_date,'readyDate',d.ready_date,
