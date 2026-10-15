@@ -7,6 +7,7 @@ const MAX_FILE = 2 * 1024 * 1024;
 const MAX_DIRECT_PDF = 6 * 1024 * 1024;
 const DIRECT_UPLOAD_ENABLED = () => process.env.ENABLE_DIRECT_PDF_UPLOAD === 'true';
 const PHONE = /^01\d{9}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const toE164 = phone => '+20' + phone.slice(1);
 function publicAuthClient() {
   const url = process.env.SUPABASE_URL;
@@ -58,13 +59,49 @@ async function login(db, phone, password, auth = publicAuthClient()) {
   if (!client || !data.user.phone_confirmed_at || data.user.phone !== toE164(phone)) return null;
   return { access_token: data.session.access_token, client: safeClient(client) };
 }
+// Email-confirmed self-service registration is a separate identity path.
+ // The user's phone stays explicitly UNVERIFIED until SMS verification.
+async function emailLogin(db,email,password,auth = publicAuthClient()){
+  const {data,error}=await auth.auth.signInWithPassword({email,password});
+  const user=data?.user;
+  if(error||!data?.session?.access_token||!user?.id||!user?.email_confirmed_at||
+    String(user.email||'').toLowerCase()!==email)return null;
+  let state=await readData(db);
+  let client=(state.clients||[]).find(c=>c.authUserId===user.id&&c.emailVerified===true);
+  if(!client){
+    const meta=user.user_metadata||{};
+    const name=String(meta.elmarwa_name||'').trim().slice(0,120);
+    const company=String(meta.elmarwa_company||'').trim().slice(0,120);
+    const address=String(meta.elmarwa_address||'').trim().slice(0,250);
+    const phone=String(meta.elmarwa_phone||'').trim();
+    if(!name||!company||!address||!PHONE.test(phone))return null;
+    if((state.clients||[]).some(c=>c.phone===phone||String(c.email||'').toLowerCase()===email))return null;
+    try{
+      await mutate(db,'clients','POST',null,{
+        name,company,address,phone,email,type:'B',balance:0,
+        authUserId:user.id,emailVerified:true,phoneVerified:false
+      });
+    }catch(e){
+      if(e.code!=='23505')throw e;
+    }
+    state=await readData(db);
+    client=(state.clients||[]).find(c=>c.authUserId===user.id&&c.emailVerified===true);
+  }
+  if(!client||String(client.email||'').toLowerCase()!==email)return null;
+  return {access_token:data.session.access_token,client:safeClient(client)};
+}
 async function identity(db, req) {
   const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   if (!match) return null;
   const { data, error } = await db.auth.getUser(match[1]);
   if (error || !data?.user) return null;
   const snapshot = await readData(db);
-  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && c.phoneVerified === true && c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, '')));
+  const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && (
+    (c.phoneVerified === true && data.user.phone_confirmed_at &&
+      c.phone === ('0' + String(data.user.phone || '').replace(/^\\+20/, ''))) ||
+    (c.emailVerified === true && data.user.email_confirmed_at && data.user.email &&
+      String(c.email||'').toLowerCase()===data.user.email.toLowerCase())
+  ));
   return { user: data.user, client, snapshot };
 }
 function serialNumber(orders) {
@@ -213,11 +250,43 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       if (!client) return respond(res, 503, 'تم التأكيد لكن تعذر تفعيل ملف العميل');
       return res.status(201).json({access_token:data.session.access_token, client:safeClient(client)});
     }
+    if (action === 'register-email' && req.method === 'POST') {
+      if(process.env.ENABLE_CUSTOMER_EMAIL_SIGNUP!=='true')
+        return respond(res,503,'التسجيل بالبريد غير مفعل بعد');
+      const body=parse(req);
+      const email=String(body.email||'').trim().toLowerCase();
+      const phone=String(body.phone||'').trim();
+      const password=String(body.pass||'');
+      const name=String(body.name||'').trim();
+      const company=String(body.company||'').trim();
+      const address=String(body.address||'').trim();
+      if(!EMAIL.test(email)||email.length>254||!PHONE.test(phone)||
+          password.length<12||password.length>72||
+          !name||name.length>120||!company||company.length>120||
+          !address||address.length>250)
+        return respond(res,400,'أكمل بيانات التسجيل بكلمة مرور 12 حرفًا على الأقل');
+      const state=await readData(db);
+      if((state.clients||[]).some(c=>c.phone===phone||String(c.email||'').toLowerCase()===email))
+        return respond(res,409,'الرقم أو البريد مسجل بالفعل');
+      // Built-in Supabase Auth email verification and per-IP email rate limits
+      // must remain enabled. No account is authorized before confirmation.
+      const auth=authFactory();
+      const {error}=await auth.auth.signUp({email,password,options:{data:{
+        elmarwa_name:name,elmarwa_company:company,elmarwa_address:address,
+        elmarwa_phone:phone
+      }}});
+      if(error)return respond(res,429,'تعذر إرسال رسالة التحقق؛ راجع البريد أو أعد المحاولة لاحقًا');
+      return res.status(202).json({email_verification_required:true});
+    }
     if (action === 'login' && req.method === 'POST') {
       const body = parse(req);
       const phone = String(body.phone || '').trim();
-      if (!PHONE.test(phone) || typeof body.pass !== 'string') return respond(res, 400, 'بيانات الدخول غير صحيحة');
-      const session = await login(db, phone, body.pass, authFactory());
+      const email = String(body.email || '').trim().toLowerCase();
+      if (typeof body.pass !== 'string' || (!PHONE.test(phone) && !EMAIL.test(email)))
+        return respond(res, 400, 'بيانات الدخول غير صحيحة');
+      const session = EMAIL.test(email)
+        ? await emailLogin(db,email,body.pass,authFactory())
+        : await login(db,phone,body.pass,authFactory());
       if (!session) return respond(res, 401, 'بيانات الدخول غير صحيحة أو الحساب يحتاج تفعيل');
       return res.status(200).json(session);
     }
