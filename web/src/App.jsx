@@ -3,6 +3,7 @@ const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const TOKEN_KEY = 'elmarw_admin_access_token'
+const CLIENT_TOKEN_KEY = 'elmarw_verified_client_access_token'
 
 async function apiRead(resource, token) {
   const response = await fetch(`${API}/${resource}`, {
@@ -11,6 +12,15 @@ async function apiRead(resource, token) {
   const body = await response.json().catch(() => null)
   if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`)
   if (!Array.isArray(body)) throw new Error(`Invalid ${resource} response`)
+  return body
+}
+
+async function getVerifiedClientProfile(token) {
+  const response = await fetch(`${API}/customer-profile`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error || 'تعذر تحميل بيانات العميل')
   return body
 }
 
@@ -44,12 +54,12 @@ export default function App() {
   const [clientSearch, setClientSearch] = useState('')
   const [orderSearch, setOrderSearch] = useState('')
   const [accountingDate, setAccountingDate] = useState(new Date().toISOString().slice(0,10))
-  const [form, setForm] = useState({ name: '', phone: '', company: '', address: '', pass: '' })
+  const [form, setForm] = useState({ name: '', phone: '', email: '', company: '', address: '', pass: '' })
   const [employeeForm, setEmployeeForm] = useState({ id: null, name: '', phone: '', pass: '', permissions: { dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } })
   const [categoryForm, setCategoryForm] = useState({ name: '', id: null })
   const [subCategoryForm, setSubCategoryForm] = useState({ name: '', categoryId: '', image: '', id: null })
   const [productForm, setProductForm] = useState({ name: '', categoryId: '', subCategoryId: '', image: '', id: null, pricesB: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}, pricesVIP: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''} })
-  const [login, setLogin] = useState({ phone: '', pass: '' })
+  const [login, setLogin] = useState({ email: '', phone: '', pass: '' })
   const [loggedClient, setLoggedClient] = useState(null)
   const [showAdmin, setShowAdmin] = useState(false)
   const [loggedEmployee, setLoggedEmployee] = useState(null)
@@ -67,6 +77,8 @@ export default function App() {
   const [loadError, setLoadError] = useState('')
   const [adminBusy, setAdminBusy] = useState(false)
   const [categoryBusy, setCategoryBusy] = useState(false)
+  const [clientBusy, setClientBusy] = useState(false)
+  const [loginBusy, setLoginBusy] = useState(false)
 
   const saveCategory = async () => {
     const name = categoryForm.name.trim()
@@ -132,6 +144,14 @@ export default function App() {
         loadAll(token)
       }).catch(() => sessionStorage.removeItem(TOKEN_KEY))
     }
+    // Never trust a locally cached customer profile without a valid Auth token.
+    const clientToken = sessionStorage.getItem(CLIENT_TOKEN_KEY)
+    if (clientToken) {
+      getVerifiedClientProfile(clientToken).then(setLoggedClient).catch(() => {
+        sessionStorage.removeItem(CLIENT_TOKEN_KEY)
+        setLoggedClient(null)
+      })
+    }
     const nt = localStorage.getItem('notifications')
     if (nt) { try { setNotifications(JSON.parse(nt)) } catch {} }
   }, [])
@@ -179,8 +199,98 @@ export default function App() {
   const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
   const updateOrder = async (id, updates) => { const oldOrder = orders.find(o=> o.id===id); await fetch(`${API}/orders/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)}); if(oldOrder && (updates.status || updates.paidAmount!==undefined || updates.paymentMethod)){ const newNotif = { id: Date.now(), orderId: id, clientId: oldOrder.clientId, clientPhone: oldOrder.clientPhone, msg: `طلبك #${id} ${updates.status? `بقى: ${updates.status}`:''} ${updates.paidAmount!==undefined? ` - المدفوع: ${updates.paidAmount}ج`:''}`, date: new Date().toLocaleString('ar-EG'), read: false }; setNotifications(prev=> [newNotif,...prev].slice(0,50)) } loadAll() }
   const myUnread = notifications.filter(n=> { if(!loggedClient) return false; return (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,'')) &&!n.read })
-  const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(form.phone.length!==11){ alert('الموبايل لازم 11 رقم'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } await fetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); alert('تم التسجيل ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); loadAll() }
-  const handleLogin = () => { const c = clients.find(x => String(x.phone) === String(login.phone) && x.pass === login.pass); if(c){ setLoggedClient(c); setShowLogin(false); setLogin({phone:'', pass:''}) } else { alert('بيانات غلط ❌\n\nلو نسيت الباسورد برجاء التواصل مع خدمة العملاء\n📞 01000000000') } }
+  const handleRegister = async () => {
+    const email = form.email.trim().toLowerCase()
+    const name = form.name.trim()
+    const phone = form.phone.trim()
+    const company = form.company.trim()
+    const address = form.address.trim()
+
+    if (!name || !phone || !email || !company || !address || !form.pass) {
+      alert('من فضلك املأ كل البيانات بما فيها البريد الإلكتروني')
+      return
+    }
+    if (!/^01[0-9]{9}$/.test(phone)) { alert('رقم الموبايل لازم يكون 11 رقم ويبدأ بـ 01'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('البريد الإلكتروني غير صحيح'); return }
+    if (name.length < 2 || name.length > 120 || company.length > 120 || address.length < 3 || address.length > 300) {
+      alert('راجع طول الاسم والعنوان واسم الشركة')
+      return
+    }
+    if (form.pass.length < 8) { alert('كلمة المرور لازم تكون 8 أحرف على الأقل'); return }
+    if (!SUPABASE_URL || !SUPABASE_KEY) { alert('إعدادات Supabase غير متاحة، راجع مسؤول النظام'); return }
+
+    setClientBusy(true)
+    try {
+      // Supabase Auth stores the password safely and sends the confirmation email.
+      // Only the non-sensitive customer details are placed in signup metadata.
+      const response = await fetch(
+        `${SUPABASE_URL}/auth/v1/signup?email_redirect_to=${encodeURIComponent(window.location.origin)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+          body: JSON.stringify({
+            email, password: form.pass,
+            data: { elmarwa_registration: 'v1', name, phone, company, address }
+          })
+        }
+      )
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.msg || body.error_description || body.message || 'تعذر التسجيل')
+      // Do not mark the customer as active until the email is verified.
+      alert('تم استلام طلب التسجيل ✅\nافتح بريدك الإلكتروني واضغط رابط التأكيد، ثم ارجع وسجّل الدخول بالإيميل وكلمة المرور. تفقد Spam أيضًا.')
+      setShowForm(false)
+      setForm({ name: '', phone: '', email: '', company: '', address: '', pass: '' })
+    } catch (error) {
+      alert('تعذر إرسال رسالة تفعيل الحساب: ' + error.message)
+    } finally {
+      setClientBusy(false)
+    }
+  }
+
+  const handleLogin = async () => {
+    const email = login.email.trim().toLowerCase()
+    const password = login.pass
+
+    if (!email) {
+      // Preserve the old phone/password path for existing legacy customer accounts.
+      const legacy = clients.find(c => String(c.phone) === String(login.phone) && c.pass === password)
+      if (legacy) {
+        setLoggedClient(legacy)
+        setShowLogin(false)
+        setLogin({ email: '', phone: '', pass: '' })
+      } else {
+        alert('للحسابات الجديدة اكتب الإيميل وكلمة المرور.\nلو حسابك قديم بالموبايل، تواصل مع الإدارة لتحديثه.')
+      }
+      return
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) { alert('إعدادات تسجيل الدخول غير متاحة'); return }
+    if (!password) { alert('اكتب كلمة المرور'); return }
+    setLoginBusy(true)
+    try {
+      const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+        body: JSON.stringify({ email, password })
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok || !body.access_token) {
+        const message = String(body.msg || body.error_description || body.message || '')
+        if (/not confirmed/i.test(message)) throw new Error('فعّل إيميلك من رسالة التأكيد أولًا')
+        throw new Error('الإيميل أو كلمة المرور غير صحيحة')
+      }
+      const profile = await getVerifiedClientProfile(body.access_token)
+      sessionStorage.setItem(CLIENT_TOKEN_KEY, body.access_token)
+      setLoggedClient(profile)
+      setShowLogin(false)
+      setLogin({ email: '', phone: '', pass: '' })
+    } catch (error) {
+      sessionStorage.removeItem(CLIENT_TOKEN_KEY)
+      alert('تعذر تسجيل الدخول: ' + error.message)
+    } finally {
+      setLoginBusy(false)
+    }
+  }
   const handleAdminLogin = async () => {
     const email = adminLogin.user.trim()
     const password = adminLogin.pass
@@ -442,7 +552,7 @@ export default function App() {
         <h2 style={{ margin: 0, cursor: 'pointer' }} onClick={() => setSelectedSub(null)}>المروة - REAL DB ✅</h2>
         <div style={{display:'flex', alignItems:'center'}}>
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
-          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); localStorage.removeItem('loggedClient'); setCart([])}}> خروج</span></>}
+          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); localStorage.removeItem('loggedClient'); sessionStorage.removeItem(CLIENT_TOKEN_KEY); setCart([])}}> خروج</span></>}
         </div>
       </div>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
@@ -489,8 +599,8 @@ export default function App() {
       </div>}
 
       {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
-      {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
-      {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
+      {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="البريد الإلكتروني (إجباري)" type="email" autoComplete="email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister} disabled={clientBusy}>{clientBusy ? 'جاري إرسال رسالة التفعيل...' : 'تسجيل وإرسال التأكيد'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
+      {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="الإيميل للحسابات الجديدة" type="email" autoComplete="email" value={login.email} onChange={e => setLogin({...login, email:e.target.value})} style={inputStyle} /><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin} disabled={loginBusy}>{loginBusy ? 'جاري الدخول...' : 'دخول'}</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
       {showAdminLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '380px' }}><h3 style={{textAlign:'center'}}>دخول المدير عبر Supabase</h3><input placeholder="البريد الإلكتروني للمدير" value={adminLogin.user} onChange={e => setAdminLogin({...adminLogin, user: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type="password" value={adminLogin.pass} onChange={e => setAdminLogin({...adminLogin, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#0f172a', color: 'white', width: '100%'}} onClick={handleAdminLogin} disabled={adminBusy}>{adminBusy ? 'جاري التحقق...' : 'دخول'}</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => {setShowAdminLogin(false); setShowLogin(true)}}>رجوع</button></div></div>}
     </div>
   )
