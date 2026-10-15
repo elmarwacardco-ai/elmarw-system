@@ -260,21 +260,43 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       const name=String(body.name||'').trim();
       const company=String(body.company||'').trim();
       const address=String(body.address||'').trim();
+      const captchaToken=String(body.captchaToken||'');
       if(!EMAIL.test(email)||email.length>254||!PHONE.test(phone)||
           password.length<12||password.length>72||
           !name||name.length>120||!company||company.length>120||
-          !address||address.length>250)
-        return respond(res,400,'أكمل بيانات التسجيل بكلمة مرور 12 حرفًا على الأقل');
+          !address||address.length>250||captchaToken.length<20||captchaToken.length>2048)
+        return respond(res,400,'أكمل بيانات التسجيل وكلمة مرور 12 حرفًا على الأقل والتحقق الأمني');
+      const passedCaptcha=await captchaVerifier(captchaToken,req);
+      if(!passedCaptcha)return respond(res,400,'التحقق الأمني لم ينجح؛ حاول مرة أخرى');
       const state=await readData(db);
       if((state.clients||[]).some(c=>c.phone===phone||String(c.email||'').toLowerCase()===email))
         return respond(res,409,'الرقم أو البريد مسجل بالفعل');
       // Built-in Supabase Auth email verification and per-IP email rate limits
       // must remain enabled. No account is authorized before confirmation.
       const auth=authFactory();
-      const {error}=await auth.auth.signUp({email,password,options:{data:{
-        elmarwa_name:name,elmarwa_company:company,elmarwa_address:address,
-        elmarwa_phone:phone
-      }}});
+      // Never trust client-supplied redirect hosts. Vercel injects the
+      // current deployment host; any override is configured server-side.
+      const host=process.env.VERCEL_URL;
+      const configuredUrl=process.env.CUSTOMER_EMAIL_REDIRECT_URL;
+      let redirectTo;
+      if(configuredUrl) {
+        const parsed=new URL(configuredUrl);
+        if(parsed.protocol!=='https:' || parsed.username || parsed.password ||
+           !parsed.hostname || parsed.search || parsed.hash)
+          return respond(res,503,'عنوان تأكيد البريد في إعدادات السيرفر غير صالح');
+        redirectTo=parsed.origin;
+      } else if(host && /^[a-z\d-]+(?:\.[a-z\d-]+)*\.vercel\.app$/i.test(host)) {
+        redirectTo='https://'+host;
+      } else {
+        return respond(res,503,'عنوان تأكيد البريد غير مهيأ بعد');
+      }
+      const {error}=await auth.auth.signUp({email,password,options:{
+        emailRedirectTo:redirectTo,
+        data:{
+          elmarwa_name:name,elmarwa_company:company,elmarwa_address:address,
+          elmarwa_phone:phone
+        }
+      }});
       if(error)return respond(res,429,'تعذر إرسال رسالة التحقق؛ راجع البريد أو أعد المحاولة لاحقًا');
       return res.status(202).json({email_verification_required:true});
     }
