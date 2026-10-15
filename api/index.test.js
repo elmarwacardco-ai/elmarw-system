@@ -123,3 +123,21 @@ test('invalid input cannot create a blank-name product',async()=>{
   const after=await request(db,'/api/products','GET',null,'admin');
   assert.equal(after.body.length,before.body.length);
 });
+
+test('disabled WhatsApp drafts answer 503 before making any database connection',async()=>{
+  const was=process.env.ENABLE_WHATSAPP_DRAFTS;
+  delete process.env.ENABLE_WHATSAPP_DRAFTS;
+  try {
+    let opened=false;
+    const req={url:'/api/whatsapp-drafts',method:'GET',headers:{}};
+    const res={statusCode:200,body:null,setHeader(){return this;},
+      status(status){this.statusCode=status;return this;},
+      json(body){this.body=body;return this;},end(){return this;}};
+    await handleApiRequest(req,res,()=>{opened=true;throw Error('Database should not be connected')});
+    assert.equal(res.statusCode,503);
+    assert.equal(opened,false);
+  } finally {
+    if(was===undefined)delete process.env.ENABLE_WHATSAPP_DRAFTS;
+    else process.env.ENABLE_WHATSAPP_DRAFTS=was;
+  }
+});
