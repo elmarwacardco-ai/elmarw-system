@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { clientWhatsAppUrl } from './whatsapp.js'
 const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -684,6 +685,16 @@ export default function App() {
           <div style={{display:'flex',alignItems:'center',gap:'7px',flexWrap:'wrap'}}>
             <b style={{fontSize:'13px'}}>👤 العميل: {o.clientName}</b>
             <span style={{fontSize:'11px',color:'#64748b'}}>📞 {o.clientPhone}</span>
+            {clientWhatsAppUrl(o.clientPhone) && (
+              <a
+                href={clientWhatsAppUrl(o.clientPhone)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={'فتح واتساب العميل ' + o.clientName}
+                title="فتح محادثة واتساب يدويًا بدون إرسال تلقائي"
+                style={{background:'#e8f7ee',border:'1px solid #a7e4c2',color:'#116a40',padding:'4px 10px',borderRadius:'12px',fontSize:'11px',fontWeight:900,textDecoration:'none',whiteSpace:'nowrap'}}
+              >💬 واتساب العميل</a>
+            )}
             {o.workerName && <span style={{background:'#e0e7ff',color:'#3730a3',padding:'3px 8px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>👷 الشغال: {o.workerName}</span>}
             <span style={{background:'#0f172a',color:'white',padding:'2px 7px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>🔢 {o.serialNumber||o.id}</span>
             <span style={{background:statusColor(o.status),color:'white',padding:'3px 9px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>{o.status||'جديد'}</span>
