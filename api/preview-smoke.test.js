@@ -51,5 +51,5 @@ test('customer orders do not leak without sign-in',async()=>{
 });
 test('unlaunched WhatsApp draft API stays disabled in Preview',async()=>{
   const r=await get('/api/whatsapp-drafts');
-  assert.equal(r.status,503,'WhatsApp drafts returned '+r.status);
+  assert.equal(r.status,503,'WhatsApp drafts returned '+r.status+': '+String(r.body?.error||'no JSON error').slice(0,120));
 });
