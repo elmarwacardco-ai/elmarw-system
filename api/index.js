@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { handleCustomerRequest } from './customer.js';
+import { handleWhatsAppDrafts } from './whatsapp-drafts.js';
 
 const RESOURCES = new Set(['clients', 'categories', 'subcategories', 'products', 'orders', 'employees', 'folders']);
 const PUBLIC_RESOURCES = new Set(['categories', 'subcategories', 'products']);
@@ -134,6 +135,7 @@ export async function handleApiRequest(req, res, makeDatabase = database) {
   try {
     const { resource, id } = route(req.url);
     if (resource === 'customer') return handleCustomerRequest(req, res, makeDatabase());
+    if (resource === 'whatsapp-drafts') return handleWhatsAppDrafts(req, res, makeDatabase());
     if (!RESOURCES.has(resource) || (id && !/^\d+$/.test(id))) return errorResponse(res, 404, 'Unknown resource');
     if (['POST','PUT','PATCH','DELETE'].includes(req.method) && ((req.method === 'POST' && id) || (req.method !== 'POST' && !id))) {
       return errorResponse(res, 405, 'Invalid operation');
