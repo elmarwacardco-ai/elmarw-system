@@ -56,7 +56,7 @@ async function mutate(db, resource, method, id, payload) {
 async function login(db, phone, password, auth = publicAuthClient()) {
   const snapshot = await readData(db);
   const registered = (snapshot.clients || []).find(c => c.phone === phone);
-  if (registered?.provisionalSignup === true && registered.phoneVerified !== true) {
+  if (process.env.ENABLE_TEMP_PHONE_SIGNUP === 'true' && registered?.provisionalSignup === true && registered.phoneVerified !== true) {
     const { data, error } = await auth.auth.signInWithPassword({
       email: temporaryEmail(phone), password
     });
@@ -116,7 +116,7 @@ async function identity(db, req) {
       c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, ''))) ||
     (c.emailVerified === true && data.user.email_confirmed_at && data.user.email &&
       String(c.email||'').toLowerCase()===data.user.email.toLowerCase()) ||
-    (c.provisionalSignup === true && c.phoneVerified !== true &&
+    (process.env.ENABLE_TEMP_PHONE_SIGNUP === 'true' && c.provisionalSignup === true && c.phoneVerified !== true &&
       data.user.app_metadata?.elmarwa_temp_customer === true &&
       String(data.user.email||'').toLowerCase() === temporaryEmail(c.phone))
   ));
