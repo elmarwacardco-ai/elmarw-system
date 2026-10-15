@@ -17,3 +17,10 @@
 - Run real browser testing for PDF restoration and completed orders and resolve release blockers in PR #1.
 
 Do not deploy to Production or alter Supabase customer/order data based on this frontend-only phase.
+## Current approved WhatsApp contact (changeable configuration)
+
+The business currently uses **01070250376** (E.164: **+201070250376**) as the intended Elmarwa bot contact. The owner confirmed this is the current number and it may be changed later. This is **not** an activated bot or authenticated phone number.
+
+For the guest checkout's optional **contact-only** button, configure Vercel **Preview** environment variable `VITE_WHATSAPP_BOT_NUMBER=201070250376` (prefer branch-specific `feature/guest-checkout-whatsapp-handoff-20261015`). Redeploy Preview so Vite embeds the public contact setting. Updating the environment variable and redeploying changes the displayed contact number without changing source code. Never use this setting as a proof of phone ownership or to grant customer login.
+
+The Vercel environment settings endpoint returned 404 during the attempt on October 15, 2026, so **this value was not added to Vercel** by the assistant and the WhatsApp contact button is not verified as enabled.
