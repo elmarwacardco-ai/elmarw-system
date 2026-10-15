@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { handleCustomerRequest } from './customer.js';
 import { handleWhatsAppDrafts } from '../lib/whatsapp-drafts.js';
+import { handleStaffRequest } from '../lib/staff.js';
 
 const RESOURCES = new Set(['clients', 'categories', 'subcategories', 'products', 'orders', 'employees', 'folders']);
 const PUBLIC_RESOURCES = new Set(['categories', 'subcategories', 'products']);
@@ -78,7 +79,38 @@ async function getIdentity(db, req) {
   if (error || !data?.user) return { invalid: true };
   const { data: admin, error: lookupError } = await db.from('admin_users').select('user_id').eq('user_id', data.user.id).maybeSingle();
   if (lookupError) throw lookupError;
-  return { id: data.user.id, isAdmin: Boolean(admin) };
+  if (admin) return { id: data.user.id, isAdmin: true, employee: null };
+  // Staff identities must be provisioned by an administrator in Supabase
+  // Auth and linked explicitly to an active employee record.
+  const snapshot = await readSnapshot(db);
+  const employee = (snapshot.employees || []).find(e =>
+    e.active === true && e.authUserId === data.user.id &&
+    data.user.email_confirmed_at && data.user.email &&
+    String(e.email || '').toLowerCase() === data.user.email.toLowerCase()
+  ) || null;
+  return { id: data.user.id, isAdmin: false, employee };
+}
+function staffAllowed(identity, resource, method) {
+  const employee = identity?.employee;
+  if (!employee || employee.mustChangePassword === true) return false;
+  let perms = employee.permissions;
+  if (typeof perms === 'string') {
+    try { perms = JSON.parse(perms); } catch { return false; }
+  }
+  if (!perms || typeof perms !== 'object' || Array.isArray(perms)) return false;
+  // Staff never manage other staff accounts or credentials.
+  if (resource === 'employees') return false;
+  if (resource === 'clients') return perms.clients === true;
+  if (resource === 'categories' || resource === 'subcategories') return perms.categories === true;
+  if (resource === 'products') return perms.products === true;
+  if (resource === 'orders' || resource === 'folders') {
+    const orders = perms.orders === true;
+    const shipping = perms.shipping === true;
+    if (orders) return true;
+    // Shipping-only staff may read order status, not change prices or payments.
+    return shipping && (method === 'GET' || method === 'HEAD');
+  }
+  return false;
 }
 export function publicView(key, values) {
   if (key === 'products') return values.map(product => ({
@@ -135,6 +167,7 @@ export async function handleApiRequest(req, res, makeDatabase = database) {
   try {
     const { resource, id } = route(req.url);
     if (resource === 'customer') return handleCustomerRequest(req, res, makeDatabase());
+    if (resource === 'staff') return handleStaffRequest(req, res, makeDatabase());
     // Disabled features must not contact Supabase or instantiate privileged clients.
     // This also gives the preview a stable 503 rather than a masked 500.
     if (resource === 'whatsapp-drafts' && process.env.ENABLE_WHATSAPP_DRAFTS !== 'true') {
@@ -149,17 +182,18 @@ export async function handleApiRequest(req, res, makeDatabase = database) {
     const identity = await getIdentity(db, req);
     if (identity?.invalid) return errorResponse(res, 401, 'Invalid or expired session');
 
-    // The storefront may only read category and public (B) price data.
-    // Clients, orders, employees and internal folders never leave this endpoint without admin auth.
-    if (!identity?.isAdmin && (!PUBLIC_RESOURCES.has(resource) || !['GET','HEAD'].includes(req.method))) {
-      return errorResponse(res, identity ? 403 : 401, 'Admin access required');
+    // Public visitors see only the B-price catalog. Active staff may access
+    // explicitly granted workstreams after their first password change.
+    const privateAccess = identity?.isAdmin || staffAllowed(identity, resource, req.method);
+    if (!privateAccess && (!PUBLIC_RESOURCES.has(resource) || !['GET','HEAD'].includes(req.method))) {
+      return errorResponse(res, identity ? 403 : 401, 'Permission required');
     }
 
     if (req.method === 'GET' || req.method === 'HEAD') {
       const snapshot = await readSnapshot(db);
       const items = snapshot[storedKey(snapshot, resource)] ?? [];
       if (!Array.isArray(items)) return errorResponse(res, 500, 'Invalid resource data');
-      const result = identity?.isAdmin ? adminView(resource, items) : publicView(resource, items);
+      const result = privateAccess ? adminView(resource, items) : publicView(resource, items);
       const selected = id ? result.find(item => String(item.id) === id) : result;
       if (id && !selected) return errorResponse(res, 404, 'Record not found');
       if (req.method === 'HEAD') return res.status(200).end();
