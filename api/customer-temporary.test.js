@@ -40,7 +40,8 @@ function harness() {
       return {data:created,error:null};
     }
   };
-  const authFactory=()=>({auth:{signInWithPassword:async({email,password:provided})=>{
+  const authFactory=()=>({auth:{signInWithPassword:async({email,phone:triedPhone,password:provided})=>{
+    if (triedPhone) return {error:{message:'No confirmed phone identity'}};
     calls.signin++;
     assert.equal(email,internalEmail);
     if(provided!==password)return {error:{message:'incorrect'}};
