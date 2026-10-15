@@ -11,6 +11,8 @@ const CUSTOMER_TOKEN_KEY = 'elmarw_customer_access_token'
 const WHATSAPP_DRAFTS_ENABLED = import.meta.env.VITE_ENABLE_WHATSAPP_DRAFTS === 'true'
 const CAPTCHA_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
 const CUSTOMER_SIGNUP_ENABLED = import.meta.env.VITE_ENABLE_CUSTOMER_SIGNUP === 'true'
+const EMAIL_SIGNUP_ENABLED = import.meta.env.VITE_ENABLE_CUSTOMER_EMAIL_SIGNUP === 'true'
+const STAFF_ENABLED = import.meta.env.VITE_ENABLE_STAFF_ACCOUNTS === 'true'
 const USE_DIRECT_PDF_UPLOAD = import.meta.env.VITE_ENABLE_DIRECT_PDF_UPLOAD === 'true'
 // Never insert customer-controlled text directly into print-window HTML.
 const escapeStickerHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -93,6 +95,12 @@ export default function App() {
   const turnstileRef = useRef(null)
   const [showLogin, setShowLogin] = useState(false)
   const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [showStaffLogin, setShowStaffLogin] = useState(false)
+  const [staffLogin, setStaffLogin] = useState({email:'',password:''})
+  const [staffBusy, setStaffBusy] = useState(false)
+  const [staffMustChangePassword, setStaffMustChangePassword] = useState(false)
+  const [staffNewPassword, setStaffNewPassword] = useState('')
+  const [staffProvisioned, setStaffProvisioned] = useState(null)
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [showSubCategoryForm, setShowSubCategoryForm] = useState(false)
   const [showProductForm, setShowProductForm] = useState(false)
@@ -107,7 +115,7 @@ export default function App() {
   const [catalogSearch, setCatalogSearch] = useState('')
   const [catalogCategory, setCatalogCategory] = useState('all')
   const [accountingDate, setAccountingDate] = useState(new Date().toISOString().slice(0,10))
-  const [form, setForm] = useState({ name: '', phone: '', company: '', address: '', pass: '' })
+  const [form, setForm] = useState({ name: '', phone: '', email: '', company: '', address: '', pass: '' })
   const [employeeForm, setEmployeeForm] = useState({ id: null, name: '', phone: '', pass: '', permissions: { dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } })
   const [categoryForm, setCategoryForm] = useState({ name: '', id: null })
   const [subCategoryForm, setSubCategoryForm] = useState({ name: '', categoryId: '', image: '', id: null })
@@ -279,13 +287,27 @@ export default function App() {
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) {
       requireAdminSession(apiRead, token).then(() => {
-        setLoggedEmployee({ name: 'المدير العام', permissions: {
+        setLoggedEmployee({ role: 'admin', name: 'المدير العام', permissions: {
           dashboard: true, employees: true, categories: true,
           products: true, clients: true, orders: true, shipping: true
         } })
         setShowAdmin(true)
         loadAll(token)
-      }).catch(() => { sessionStorage.removeItem(TOKEN_KEY); loadPublicCatalog() })
+      }).catch(async () => {
+        if (!STAFF_ENABLED) {
+          sessionStorage.removeItem(TOKEN_KEY); loadPublicCatalog(); return
+        }
+        try {
+          const response = await apiFetch('/api/staff/me')
+          const {employee} = await response.json()
+          if (!employee) throw new Error('Staff session not recognized')
+          if (employee.mustChangePassword) { setStaffMustChangePassword(true); return }
+          enterStaffDashboard(employee, token)
+        } catch (error) {
+          sessionStorage.removeItem(TOKEN_KEY)
+          loadPublicCatalog()
+        }
+      })
     }
     const nt = localStorage.getItem('notifications')
     if (nt) { try { setNotifications(JSON.parse(nt)) } catch {} }
@@ -412,22 +434,30 @@ export default function App() {
     setOrders(await customerFetch(`${API}/customer/orders`).then(r=>r.json()))
   }
   const handleRegister = async () => {
-    if (!CUSTOMER_SIGNUP_ENABLED || !CAPTCHA_SITE_KEY) {
+    if (!EMAIL_SIGNUP_ENABLED && (!CUSTOMER_SIGNUP_ENABLED || !CAPTCHA_SITE_KEY)) {
       alert('التسجيل موقوف لحين إعداد حماية الموقع'); return
     }
-    if (!captchaToken) { alert('أكمل التحقق من الأمان أولاً'); return }
+    if (!EMAIL_SIGNUP_ENABLED && !captchaToken) { alert('أكمل التحقق من الأمان أولاً'); return }
     if (!form.name || !form.phone || !form.company || !form.address || !form.pass) {
       alert('املأ كل البيانات'); return
     }
-    if (!/^01\d{9}$/.test(form.phone) || form.pass.length < 8) {
+    if (!/^01\d{9}$/.test(form.phone) || form.pass.length < (EMAIL_SIGNUP_ENABLED ? 12 : 8) ||
+      (EMAIL_SIGNUP_ENABLED && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))) {
       alert('راجع رقم الهاتف وكلمة المرور (8 أحرف على الأقل)'); return
     }
     try {
-      const response = await customerFetch(`${API}/customer/register`, {
+      const response = await customerFetch(`${API}/customer/${EMAIL_SIGNUP_ENABLED ? 'register-email' : 'register'}`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({...form, captchaToken})
       })
       const result = await response.json()
+      if (EMAIL_SIGNUP_ENABLED) {
+        if (!result.email_verification_required) throw new Error('تعذر طلب تأكيد البريد الإلكتروني')
+        setShowForm(false)
+        setForm({name:'',phone:'',email:'',company:'',address:'',pass:''})
+        alert('اتبع رابط التأكيد في بريدك الإلكتروني، وبعدها سجّل دخولك بالبريد وكلمة المرور ✅')
+        return
+      }
       if (!result.verification_required) throw new Error('لم يتم طلب تأكيد الموبايل')
       setVerificationPhone(form.phone)
       setVerificationCode('')
@@ -451,17 +481,17 @@ export default function App() {
       setShowVerifyForm(false)
       setVerificationPhone('')
       setVerificationCode('')
-      setForm({name:'',phone:'',company:'',address:'',pass:''})
+      setForm({name:'',phone:'',email:'',company:'',address:'',pass:''})
       alert('تم تأكيد الموبايل وتفعيل الحساب ✅')
     } catch (error) {
       alert('تعذر التحقق: ' + error.message)
     }
   }
   const handleLogin = async () => {
-    if (!login.phone || !login.pass) { alert('اكتب رقم التليفون والباسورد'); return }
+    if (!login.phone || !login.pass) { alert('اكتب رقم المحمول أو البريد وكلمة المرور'); return }
     try {
       const response = await customerFetch(`${API}/customer/login`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(login)
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(login.phone.includes('@') ? {email:login.phone.trim(),pass:login.pass} : login)
       })
       await activateCustomer(await response.json())
       setShowLogin(false)
@@ -490,7 +520,7 @@ export default function App() {
       // التحقق من عضوية admin_users يتم على السيرفر فقط
       await requireAdminSession(apiRead, auth.access_token)
       sessionStorage.setItem(TOKEN_KEY, auth.access_token)
-      setLoggedEmployee({ name: 'المدير العام', permissions: {
+      setLoggedEmployee({ role: 'admin', name: 'المدير العام', permissions: {
         dashboard: true, employees: true, categories: true,
         products: true, clients: true, orders: true, shipping: true
       } })
@@ -502,6 +532,67 @@ export default function App() {
       sessionStorage.removeItem(TOKEN_KEY)
       alert('تعذر دخول المدير: ' + error.message)
     } finally { setAdminBusy(false) }
+  }
+  const enterStaffDashboard = (employee, token) => {
+    setLoggedEmployee({ ...employee, role: 'staff' })
+    const p = employee.permissions || {}
+    const firstTab = ['dashboard','orders','clients','categories','products','shipping'].find(k => p[k] === true) || 'dashboard'
+    setAdminTab(firstTab === 'shipping' ? 'orders' : firstTab)
+    setStaffMustChangePassword(false)
+    setShowAdmin(true)
+    loadAll(token)
+  }
+  const handleStaffLogin = async () => {
+    if (staffBusy) return
+    setStaffBusy(true)
+    try {
+      const response = await fetch('/api/staff/login', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(staffLogin)
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'تعذر دخول الموظف')
+      sessionStorage.setItem(TOKEN_KEY, body.access_token)
+      setShowStaffLogin(false)
+      setStaffLogin({email:'',password:''})
+      if (body.employee.mustChangePassword) {
+        setStaffMustChangePassword(true)
+      } else enterStaffDashboard(body.employee, body.access_token)
+    } catch (error) { alert('دخول الموظف: ' + error.message) }
+    finally { setStaffBusy(false) }
+  }
+  const handleStaffPasswordChange = async () => {
+    if (staffBusy) return
+    if (staffNewPassword.length < 12) { alert('كلمة المرور الجديدة لازم تكون 12 حرف على الأقل'); return }
+    setStaffBusy(true)
+    try {
+      await apiFetch('/api/staff/change-password', {
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({password:staffNewPassword})
+      })
+      const response = await apiFetch('/api/staff/me')
+      const {employee} = await response.json()
+      if (employee.mustChangePassword) throw new Error('لم يتم تفعيل كلمة المرور الجديدة')
+      setStaffNewPassword('')
+      enterStaffDashboard(employee, sessionStorage.getItem(TOKEN_KEY))
+      alert('تم تغيير كلمة المرور وتفعيل حساب الموظف ✅')
+    } catch (error) { alert('فشل تغيير كلمة المرور: ' + error.message) }
+    finally { setStaffBusy(false) }
+  }
+  const activateEmployeeLogin = async (employee) => {
+    if (!STAFF_ENABLED) { alert('تفعيل دخول الموظفين غير متاح على هذا النشر'); return }
+    const email = window.prompt('اكتب البريد الإلكتروني للموظف (لتسجيل الدخول)', employee.email || '')
+    if (!email) return
+    try {
+      const response = await apiFetch('/api/staff/activate', {
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({employeeId:employee.id,email:email.trim()})
+      })
+      const result = await response.json()
+      if (!result.temporaryPassword) throw new Error('لم يتم إصدار كلمة مرور مؤقتة')
+      setStaffProvisioned(result)
+      await loadAll()
+    } catch(error) { alert('تعذر تفعيل دخول الموظف: ' + error.message) }
   }
   const addToCart = (product, qty) => {
     if(!loggedClient){ setShowLogin(true); return }
