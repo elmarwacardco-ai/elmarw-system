@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { handleCustomerRequest } from './customer.js';
-import { handleWhatsAppDrafts } from './whatsapp-drafts.js';
+import { handleWhatsAppDrafts } from '../lib/whatsapp-drafts.js';
 
 const RESOURCES = new Set(['clients', 'categories', 'subcategories', 'products', 'orders', 'employees', 'folders']);
 const PUBLIC_RESOURCES = new Set(['categories', 'subcategories', 'products']);
