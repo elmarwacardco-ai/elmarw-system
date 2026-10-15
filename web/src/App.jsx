@@ -313,6 +313,8 @@ export default function App() {
   const handlePlaceOrder = async () => {
     if(cart.length === 0){ alert('اختر منتج أولاً'); return }
     if(!orderFile){ alert('من فضلك ارفع ملف الطلب أولاً 📎'); return }
+    if (!/\.pdf$/i.test(orderFile.name) || (orderFile.type && orderFile.type !== 'application/pdf')) { alert('ملف الطلب لازم يكون PDF'); return }
+    if (orderFile.size > 2 * 1024 * 1024) { alert('ملف PDF لازم يكون أقل من 2 ميجابايت مؤقتًا'); return }
     const total = cart.reduce((s,i)=>s+i.total,0);
     const serialNumber = generateSerial();
     const fileData = await readFileAsDataUrl(orderFile);
@@ -418,7 +420,7 @@ export default function App() {
         <div style={{display:'flex',gap:'7px',alignItems:'center',padding:'7px 10px',flexWrap:'wrap'}}>
           <button onClick={saveOrderChanges} disabled={saving} style={{...btnStyle,background:'#16a34a',color:'white',margin:0,padding:'8px 16px',fontSize:'11px',fontWeight:900}}>{saving?'جاري الحفظ...':'💾 حفظ كل تعديلات الأوردر'}</button>
           <select value="" onChange={e=>{if(e.target.value)handleAddOrderToFolder(Number(e.target.value),o.id)}} style={{flex:1,minWidth:'180px',padding:'7px 8px',borderRadius:'7px',border:'1px solid #cbd5e1',fontSize:'10px'}}><option value="">⚙️ إضافة لفولدر التشغيل...</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
-          {o.paymentProof&&<span style={{fontSize:'9px',background:'#dcfce7',color:'#166534',padding:'5px 7px',borderRadius:'7px'}}>📸 تحويل مرفوع</span>}
+          {o.paymentProof&&<span style={{fontSize:'9px',background:'#fee2e2',color:'#991b1b',padding:'5px 7px',borderRadius:'7px'}}>📸 {o.paymentProofData ? <a href={o.paymentProofData} download={o.paymentProof} style={{color:'#991b1b',fontWeight:900}}>صورة التحويل - تحميل</a> : 'تحويل مرفوع'}</span>}
         </div>
       </div>
     )
@@ -556,7 +558,7 @@ export default function App() {
                   <div style={{display:'flex'}}>
                     <div style={{width:'170px', background:'#f8fafc', borderLeft:'1px solid #e2e8f0', padding:'12px', textAlign:'center'}}>
                       <div style={{width:'130px', height:'130px', background:'white', borderRadius:'10px', border:'1px solid #e2e8f0', margin:'0 auto', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center'}}>{(()=>{ const prod = products.find(p=> String(p.id)===String(items[0]?.productId)); const img = items[0]?.image || prod?.image; return img? <img src={img} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : <span style={{fontSize:'11px', color:'#999'}}>صورة العمل</span> })()}</div>
-                      <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/*" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; await updateOrder(o.id, {paymentProof: file.name}); alert('تم الرفع ✅'); }}/></label></div>
+                      <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/png,image/jpeg,image/webp" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; if(file.size>1024*1024){alert('صورة التحويل لازم تكون أقل من 1 ميجابايت');return} try { const token=sessionStorage.getItem(CLIENT_TOKEN_KEY); if(!token) throw new Error('سجل دخول العميل أولًا'); const paymentProofData=await readFileAsDataUrl(file); const response=await fetch(`${API}/my-orders/${o.id}/payment`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({paymentProof:file.name,paymentProofData})}); const result=await response.json().catch(()=>({})); if(!response.ok) throw new Error(result.error||'فشل رفع الصورة'); await loadPublic(); alert('تم رفع صورة التحويل ✅'); } catch(error){alert('فشل رفع صورة التحويل: '+error.message)} }}/></label></div>
                     </div>
                     <div style={{flex:1}}>
                       <table style={{width:'100%', borderCollapse:'collapse', fontSize:'13px'}}><tbody>
