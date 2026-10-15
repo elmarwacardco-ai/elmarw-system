@@ -28,7 +28,7 @@ jobs:
         run: node --test web/src/whatsapp.test.js
       - name: Check pinned live preview API contract (required)
         env:
-          ELMARWA_SMOKE_URL: https://elmarw-2p6sm8bp0-waled4.vercel.app/
+          ELMARWA_SMOKE_URL: https://elmarw-5wz2wi6z2-waled4.vercel.app/
         run: node --test api/preview-smoke.test.js
       - name: Verify admin role is required before dashboard entry
         run: node --test web/src/admin-session.test.js
