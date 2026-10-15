@@ -26,6 +26,11 @@ jobs:
         run: node --test api/customer.test.js api/security.test.js api/index.test.js api/whatsapp-drafts.test.js
       - name: Validate manual WhatsApp contact links
         run: node --test web/src/whatsapp.test.js
+      - name: Check deployed preview HTTP endpoints (diagnostic only)
+        continue-on-error: true # Promote to a required check after preview network access is verified.
+        env:
+          ELMARWA_SMOKE_URL: https://elmarw-kga2prrn8-waled4.vercel.app/
+        run: node --test api/preview-smoke.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app
