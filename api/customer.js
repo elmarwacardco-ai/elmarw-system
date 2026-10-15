@@ -98,7 +98,7 @@ async function identity(db, req) {
   const snapshot = await readData(db);
   const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && (
     (c.phoneVerified === true && data.user.phone_confirmed_at &&
-      c.phone === ('0' + String(data.user.phone || '').replace(/^\\+20/, ''))) ||
+      c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, ''))) ||
     (c.emailVerified === true && data.user.email_confirmed_at && data.user.email &&
       String(c.email||'').toLowerCase()===data.user.email.toLowerCase())
   ));
