@@ -28,7 +28,7 @@ jobs:
         run: node --test web/src/whatsapp.test.js
       - name: Check pinned live preview API contract (required)
         env:
-          ELMARWA_SMOKE_URL: https://elmarw-bb8trgacs-waled4.vercel.app/
+          ELMARWA_SMOKE_URL: https://elmarw-2p6sm8bp0-waled4.vercel.app/
         run: node --test api/preview-smoke.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
