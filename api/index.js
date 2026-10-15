@@ -135,6 +135,11 @@ export async function handleApiRequest(req, res, makeDatabase = database) {
   try {
     const { resource, id } = route(req.url);
     if (resource === 'customer') return handleCustomerRequest(req, res, makeDatabase());
+    // Disabled features must not contact Supabase or instantiate privileged clients.
+    // This also gives the preview a stable 503 rather than a masked 500.
+    if (resource === 'whatsapp-drafts' && process.env.ENABLE_WHATSAPP_DRAFTS !== 'true') {
+      return errorResponse(res, 503, 'WhatsApp draft review is not enabled');
+    }
     if (resource === 'whatsapp-drafts') return handleWhatsAppDrafts(req, res, makeDatabase());
     if (!RESOURCES.has(resource) || (id && !/^\d+$/.test(id))) return errorResponse(res, 404, 'Unknown resource');
     if (['POST','PUT','PATCH','DELETE'].includes(req.method) && ((req.method === 'POST' && id) || (req.method !== 'POST' && !id))) {
