@@ -130,6 +130,21 @@ export async function handleWhatsAppDrafts(req,res,db) {
         clientPhone:clients.find(c => String(c.id)===String(d.client_id))?.phone || ''
       })));
     }
+    if (req.method === 'GET' && segments.length === 4 &&
+        isUuid(segments[1]) && segments[2] === 'file' && /^[1-9]\d*$/.test(segments[3])) {
+      const {data:draft,error} = await db.from('whatsapp_drafts')
+        .select('file_versions').eq('id',segments[1]).maybeSingle();
+      if (error) throw error;
+      if (!draft) return response(res,404,'Draft not found');
+      const file = (draft.file_versions || []).find(f => Number(f.version) === Number(segments[3]));
+      if (!file?.path || !/^whatsapp-drafts\/[0-9a-f-]{36}\.pdf$/.test(file.path)) {
+        return response(res,404,'PDF not found');
+      }
+      const {data:signed,error:signError} = await db.storage.from(BUCKET)
+        .createSignedUrl(file.path,60,{download:true});
+      if (signError || !signed?.signedUrl) return response(res,503,'Unable to open private PDF');
+      return res.status(200).json({url:signed.signedUrl,fileName:file.fileName});
+    }
     if (segments.length === 1 && req.method === 'POST') {
       const body = payload(req);
       const clientId = Number(body.clientId);
