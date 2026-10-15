@@ -35,6 +35,8 @@ jobs:
         run: node --test web/src/admin-session.test.js
       - name: Test employee profile save and error handling
         run: node --test web/src/employee-save.test.js
+      - name: Run guest checkout flow tests
+        run: node --test web/src/guest-checkout.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app

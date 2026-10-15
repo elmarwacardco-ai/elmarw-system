@@ -3,6 +3,10 @@ import { clientWhatsAppUrl } from './whatsapp.js'
 import WhatsAppDrafts from './WhatsAppDrafts.jsx'
 import { requireAdminSession } from './admin-session.js'
 import { saveEmployeeRecord } from './employee-save.js'
+import {
+  loadGuestDraft, saveGuestDraft, clearGuestDraft, saveGuestPdf,
+  loadGuestPdf, clearGuestPdf, checkoutGate, buildWhatsAppHelpUrl, repriceCheckoutCart
+} from './guest-checkout.js'
 const API = '/api'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -14,6 +18,7 @@ const CUSTOMER_SIGNUP_ENABLED = import.meta.env.VITE_ENABLE_CUSTOMER_SIGNUP === 
 const EMAIL_SIGNUP_ENABLED = import.meta.env.VITE_ENABLE_CUSTOMER_EMAIL_SIGNUP === 'true'
 const STAFF_ENABLED = import.meta.env.VITE_ENABLE_STAFF_ACCOUNTS === 'true'
 const USE_DIRECT_PDF_UPLOAD = import.meta.env.VITE_ENABLE_DIRECT_PDF_UPLOAD === 'true'
+const WHATSAPP_HELP_URL = buildWhatsAppHelpUrl(import.meta.env.VITE_WHATSAPP_BOT_NUMBER)
 // Never insert customer-controlled text directly into print-window HTML.
 const escapeStickerHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
@@ -81,6 +86,9 @@ export default function App() {
   const [employees, setEmployees] = useState([])
   const [folders, setFolders] = useState([])
   const [cart, setCart] = useState([])
+  const [guestDraftReady, setGuestDraftReady] = useState(false)
+  const [guestDraftWarning, setGuestDraftWarning] = useState('')
+  const [checkoutRequiresLogin, setCheckoutRequiresLogin] = useState(false)
   const [selectedSub, setSelectedSub] = useState(null)
   const [orderFile, setOrderFile] = useState(null)
   const [orderClientName, setOrderClientName] = useState('')
@@ -142,6 +150,72 @@ export default function App() {
   const [employeeBusy, setEmployeeBusy] = useState(false)
   const [employeeError, setEmployeeError] = useState('')
   const [orderBusy, setOrderBusy] = useState(false)
+
+  // The visitor may prepare the order before login; draft files stay in the browser.
+  useEffect(() => {
+    let active = true
+    const draft = loadGuestDraft(sessionStorage)
+    if (draft) {
+      setCart(draft.cart)
+      setOrderClientName(draft.workerName)
+      setOrderNotes(draft.notes)
+      setCustomerPaymentMethod(draft.paymentMethod)
+      setShowCart(true)
+    }
+    loadGuestPdf(window.indexedDB).then(file => {
+      if (!active) return
+      if (draft && file) setOrderFile(file)
+      if (!draft) clearGuestPdf(window.indexedDB).catch(() => {})
+    }).catch(() => {
+      if (active && draft) setGuestDraftWarning('ملف PDF مش متاح بعد إعادة فتح الصفحة؛ اختاره تاني قبل الإرسال.')
+    }).finally(() => { if (active) setGuestDraftReady(true) })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (!guestDraftReady) return
+    if (!cart.length) {
+      clearGuestDraft(sessionStorage)
+      clearGuestPdf(window.indexedDB).catch(() => {})
+      return
+    }
+    try {
+      saveGuestDraft(sessionStorage, {
+        cart, workerName:orderClientName, notes:orderNotes,
+        paymentMethod:customerPaymentMethod
+      })
+    } catch {
+      setGuestDraftWarning('حفظ الأوردر مؤقتًا غير متاح. احتفظ بالصفحة مفتوحة.')
+    }
+  }, [guestDraftReady, cart, orderClientName, orderNotes, customerPaymentMethod])
+
+  // Recompute the displayed checkout total when the customer tier/catalog changes.
+  // The API performs its own authoritative pricing before creating any order.
+  useEffect(() => {
+    if (!loggedClient || !products.length || !cart.length) return
+    const revised = repriceCheckoutCart(cart, products, loggedClient)
+    if (revised.some((item, i) =>
+      item.price !== cart[i].price || item.total !== cart[i].total ||
+      Boolean(item.unavailable) !== Boolean(cart[i].unavailable))) {
+      setCart(revised)
+    }
+  }, [loggedClient, products, cart])
+
+  const selectCheckoutFile = async file => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.pdf') ||
+      !file.size || file.size > (USE_DIRECT_PDF_UPLOAD ? 6 : 2) * 1024 * 1024) {
+      alert('اختار ملف PDF بالحجم المسموح')
+      return
+    }
+    setOrderFile(file)
+    try {
+      await saveGuestPdf(window.indexedDB, file)
+      setGuestDraftWarning('')
+    } catch {
+      setGuestDraftWarning('PDF جاهز حاليًا، لكن حفظه عند تحديث الصفحة غير متاح. احتفظ بالتبويب مفتوحًا.')
+    }
+  }
 
   const saveEmployee = async () => {
     if (employeeBusy) return
@@ -505,6 +579,8 @@ export default function App() {
       })
       await activateCustomer(await response.json())
       setShowLogin(false)
+      setCheckoutRequiresLogin(false)
+      if (cart.length) setShowCart(true)
       setLogin({phone:'',pass:''})
     } catch (error) {
       alert('تعذر الدخول: ' + error.message)
@@ -606,22 +682,31 @@ export default function App() {
     } catch(error) { alert('تعذر تفعيل دخول الموظف: ' + error.message) }
   }
   const addToCart = (product, qty) => {
-    if(!loggedClient){ setShowLogin(true); return }
     let pB = product.pricesB; let pV = product.pricesVIP;
     try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{}
     try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{}
-    const price = loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty];
+    const price = loggedClient?.type === 'VIP'? pV?.[qty] : pB?.[qty];
     if (!Number.isFinite(Number(price)) || Number(price) <= 0) return;
     setCart(prev => [...prev, { id: Date.now(), productId: product.id, subCategoryId: product.subCategoryId, name: product.name, image: product.image||'', qty: Number(qty), price: Number(price), total: Number(price) }]);
     setShowCart(true)
   }
   const handlePlaceOrder = async () => {
     if (orderBusy) return
-    if (!loggedClient || !sessionStorage.getItem(CUSTOMER_TOKEN_KEY)) {
-      alert('سجل دخول العميل أولاً'); setShowLogin(true); return
+    if (loggedClient && repriceCheckoutCart(cart, products, loggedClient).some(item => item.unavailable)) {
+      alert('في منتج سعره مش متاح لنوع حسابك، احذفه أو راجع الإدارة قبل الإرسال.')
+      return
     }
-    if (!cart.length) { alert('اختر منتجاً أولاً'); return }
-    if (!orderFile) { alert('ارفع ملف PDF الخاص بالشغل أولاً'); return }
+    const gate = checkoutGate({
+      cart, pdf:orderFile, client:loggedClient,
+      accessToken:sessionStorage.getItem(CUSTOMER_TOKEN_KEY)
+    })
+    if (gate === 'empty') { alert('اختر منتجاً أولاً'); return }
+    if (gate === 'pdf-required') { alert('ارفع ملف PDF الخاص بالشغل أولاً'); return }
+    if (gate === 'auth-required') {
+      setCheckoutRequiresLogin(true)
+      setShowLogin(true)
+      return // no order is ever submitted while unauthenticated
+    }
     const maxSize = (USE_DIRECT_PDF_UPLOAD ? 6 : 2) * 1024 * 1024
     if (!orderFile.name.toLowerCase().endsWith('.pdf') || orderFile.size > maxSize || orderFile.size === 0) {
       alert(`الملف لازم يكون PDF بحد أقصى ${USE_DIRECT_PDF_UPLOAD ? 6 : 2} ميجابايت`); return
@@ -665,6 +750,8 @@ export default function App() {
       setOrders(previous => [...previous, created])
       setCart([]); setOrderClientName(''); setOrderNotes('')
       setOrderFile(null); setCustomerPaymentMethod('نقدي'); setShowCart(false)
+      clearGuestDraft(sessionStorage)
+      clearGuestPdf(window.indexedDB).catch(() => {})
       setShowMyOrders(true)
       alert('تم حفظ الطلب ✅ السيريال: ' + created.serialNumber)
     } catch (error) {
@@ -673,6 +760,7 @@ export default function App() {
       setOrderBusy(false)
     }
   }
+  // Product price is refreshed for B / VIP after login; the server always prices again.
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; return Number.isFinite(Number(price)) && Number(price) > 0 ? price : null }
   const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
   const handleCreateFolder = async () => { if(!newFolderName.trim()){ alert('اكتب اسم الفولدر'); return } const newF = { name: newFolderName.trim(), date: new Date().toLocaleString('ar-EG'), status: 'جديد', orderIds: [] }; await apiFetch(`${API}/folders`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(newF)}); setNewFolderName(''); loadAll() }
@@ -1047,8 +1135,8 @@ export default function App() {
       <header className="elmarwa-header" style={{display:'flex',justifyContent:'space-between',position:'sticky',top:0,zIndex:100}}>
         <button className="elmarwa-brand" onClick={()=>{setSelectedSub(null);setCatalogCategory('all');setCatalogSearch('')}} style={{background:'none',border:'none',padding:0,textAlign:'right'}}><strong>المروة للطباعة</strong><small>معرض المنتجات وإدارة الأوردرات</small></button>
         <div className="elmarwa-header-actions">
-          <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
-          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => { if (EMAIL_SIGNUP_ENABLED || CUSTOMER_SIGNUP_ENABLED) setShowForm(true); else alert('تسجيل العملاء الجدد متوقف مؤقتًا لحين إتمام تأمين النظام. تواصل مع إدارة المروة لتفعيل حسابك.') }}>{(EMAIL_SIGNUP_ENABLED || CUSTOMER_SIGNUP_ENABLED) ? 'تسجيل' : 'التسجيل متوقف مؤقتًا'}</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); setCart([]); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
+          <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
+          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => { if (EMAIL_SIGNUP_ENABLED || CUSTOMER_SIGNUP_ENABLED) setShowForm(true); else alert('تسجيل العملاء الجدد متوقف مؤقتًا لحين إتمام تأمين النظام. تواصل مع إدارة المروة لتفعيل حسابك.') }}>{(EMAIL_SIGNUP_ENABLED || CUSTOMER_SIGNUP_ENABLED) ? 'تسجيل' : 'التسجيل متوقف مؤقتًا'}</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); sessionStorage.removeItem(CUSTOMER_TOKEN_KEY); localStorage.removeItem('loggedClient'); clearGuestDraft(sessionStorage); clearGuestPdf(window.indexedDB).catch(()=>{}); setCart([]); setOrderFile(null); setOrders([]); apiReadPublic('products').then(setProducts).catch(console.error)}}> خروج</span></>}
         </div>
       </header>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
@@ -1114,7 +1202,7 @@ export default function App() {
         </div>
       </div>}
 
-      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder} disabled={orderBusy}>{orderBusy ? 'جاري حفظ الطلب...' : 'إرسال الطلب الآن ✅'}</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
+      {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name || 'زائر — جهّز أوردر الطباعة الأول، وهنطلب تأكيد هويتك عند الإرسال'}</div>{guestDraftWarning && <div role="alert" style={{padding:10,background:'#fef3c7',color:'#92400e',borderRadius:8,marginBottom:8}}>{guestDraftWarning}</div>}<input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept="application/pdf,.pdf" onChange={e => { void selectCheckoutFile(e.target.files[0]); e.target.value = '' }} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder} disabled={orderBusy}>{orderBusy ? 'جاري حفظ الطلب...' : loggedClient ? 'إرسال الطلب الآن ✅' : 'تأكيد الهوية وإرسال الطلب 🔒'}</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
       {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} />{EMAIL_SIGNUP_ENABLED && <><input type="email" placeholder="البريد الإلكتروني للتأكيد" value={form.email} onChange={e => setForm({...form,email:e.target.value})} style={inputStyle} /><p style={{fontSize:12,color:'#1e40af'}}>هنبعتلك رابط تأكيد على البريد. رقم الموبايل مش بيتوثّق بالبريد.</p></>}<input placeholder={EMAIL_SIGNUP_ENABLED ? 'كلمة المرور (12 حرف على الأقل)' : 'كلمة المرور'} type="password" autoComplete="new-password" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} />{CAPTCHA_SITE_KEY ? <div ref={turnstileRef} style={{minHeight:'70px',marginTop:'12px'}} /> : <div style={{color:'#b91c1c',padding:'10px'}}>التسجيل غير متاح لحين إعداد الحماية</div>}<button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister} disabled={!CAPTCHA_SITE_KEY || (!EMAIL_SIGNUP_ENABLED && !CUSTOMER_SIGNUP_ENABLED)}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
       {showVerifyForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:220, padding:'14px'}}>
         <div style={{background:'white', borderRadius:'14px', padding:'22px', width:'100%', maxWidth:'390px'}}>
@@ -1125,7 +1213,7 @@ export default function App() {
           <button onClick={()=>{setShowVerifyForm(false);setVerificationCode('');setShowForm(true)}} style={{...btnStyle,background:'#64748b',color:'white',width:'100%'}}>رجوع للتسجيل</button>
         </div>
       </div>}
-      {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل أو بريد إلكتروني" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div>{STAFF_ENABLED && <button style={{...btnStyle, background:'#0f766e', color:'white',width:'100%'}} onClick={()=>{setShowStaffLogin(true);setShowLogin(false)}}>👷 دخول الموظفين</button>}<button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
+      {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 350, padding:'12px' }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '100%', maxWidth:'400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3>{checkoutRequiresLogin && <div style={{padding:'11px',background:'#eff6ff',color:'#1e40af',borderRadius:'10px',fontSize:'13px',marginBottom:'10px'}}>✓ السلة وملف الطباعة متاحين في نفس الأوردر. بعد الدخول هنرجع لنفس الصفحة قبل الإرسال. {WHATSAPP_HELP_URL ? <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" style={{display:'block',marginTop:'8px',color:'#047857',fontWeight:900}}>💬 التواصل مع بوت المروة عبر واتساب</a> : <span style={{display:'block',marginTop:'8px'}}>تسجيل الدخول بواتساب قيد الربط؛ استخدم الدخول الحالي مؤقتًا.</span>}<small style={{display:'block',marginTop:'6px'}}>مجرد فتح واتساب لا يؤكد رقم العميل ولا يسجله دخول؛ التحقق الآمن مطلوب.</small></div>}<input placeholder="موبايل أو بريد إلكتروني" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div>{STAFF_ENABLED && <button style={{...btnStyle, background:'#0f766e', color:'white',width:'100%'}} onClick={()=>{setShowStaffLogin(true);setShowLogin(false)}}>👷 دخول الموظفين</button>}<button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => {setShowLogin(false);setCheckoutRequiresLogin(false)}}>{checkoutRequiresLogin ? 'رجوع للأوردر' : 'اغلاق'}</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
       {showStaffLogin && <div role="dialog" aria-modal="true" style={{position:'fixed',inset:0,zIndex:550,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'white',padding:22,borderRadius:12,width:'100%',maxWidth:390}}>
         <h3>👷 دخول الموظف</h3><input type="email" autoComplete="username" placeholder="بريد الموظف" value={staffLogin.email} onChange={e=>setStaffLogin({...staffLogin,email:e.target.value})} style={inputStyle}/><input type="password" autoComplete="current-password" placeholder="كلمة المرور" value={staffLogin.password} onChange={e=>setStaffLogin({...staffLogin,password:e.target.value})} style={inputStyle}/>
         <button disabled={staffBusy} onClick={handleStaffLogin} style={{...btnStyle,background:'#0f766e',color:'white',width:'100%'}}>{staffBusy?'جارٍ التحقق...':'دخول الموظف'}</button><button onClick={()=>{setShowStaffLogin(false);setShowLogin(true)}} style={{...btnStyle,width:'100%'}}>رجوع</button>
