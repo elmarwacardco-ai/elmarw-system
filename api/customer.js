@@ -11,6 +11,13 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const toE164 = phone => '+20' + phone.slice(1);
 // Internal-only login alias; never sent to a customer or used as proof of email/phone ownership.
 const temporaryEmail = phone => 'elmarwa-temporary-' + phone + '@example.com';
+const normalizedEgyptPhone = value => {
+  const raw = String(value || '').trim().replace(/[\s()-]/g, '');
+  if (PHONE.test(raw)) return raw;
+  if (/^\+201\d{9}$/.test(raw)) return '0' + raw.slice(3);
+  if (/^201\d{9}$/.test(raw)) return '0' + raw.slice(2);
+  return '';
+};
 function publicAuthClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -209,7 +216,7 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
         return respond(res, 400, 'راجع بيانات العميل وكلمة المرور (12 حرفًا على الأقل) والتحقق الأمني');
       }
       const snapshot = await readData(db);
-      if ((snapshot.clients || []).some(c => c.phone === phone)) {
+      if ((snapshot.clients || []).some(c => normalizedEgyptPhone(c.phone) === phone)) {
         return respond(res, 409, 'الرقم مسجل بالفعل. سجّل الدخول أو تواصل مع الإدارة لاستعادة الحساب');
       }
       if (!(await captchaVerifier(captchaToken, req))) {
