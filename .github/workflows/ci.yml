@@ -23,6 +23,8 @@ jobs:
           node --check api/customer.js
       - name: Run customer API tests
         run: node --test api/customer.test.js api/security.test.js api/index.test.js
+      - name: Validate manual WhatsApp contact links
+        run: node --test web/src/whatsapp.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app
