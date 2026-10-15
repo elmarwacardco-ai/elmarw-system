@@ -301,6 +301,19 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
         if (error) throw error;
         permitted = Boolean(data);
       }
+      if (!permitted) {
+        // Activated employees may open only the private files their
+        // assigned workstream requires. Payments require orders permission.
+        const staff = (actor.snapshot.employees || []).find(e=>
+          e.active===true && e.mustChangePassword!==true &&
+          e.authUserId===actor.user.id && actor.user.email_confirmed_at &&
+          String(e.email||'').toLowerCase()===String(actor.user.email||'').toLowerCase()
+        );
+        let rights=staff?.permissions;
+        if(typeof rights==='string') { try {rights=JSON.parse(rights)}catch{rights={}} }
+        permitted=Boolean(staff && (rights?.orders===true ||
+          (action==='file' && rights?.shipping===true)));
+      }
       if (!permitted) return respond(res, 403, 'غير مصرح');
       const order = (actor.snapshot.orders || []).find(o => String(o.id) === fileOrderId);
       if (!order || (actor.client && String(order.clientId) !== String(actor.client.id))) {
