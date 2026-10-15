@@ -61,3 +61,12 @@ The automatic CI runs syntax, React build and unit tests against mocked data. It
 - Supabase atomic mutation create/update/delete passed for all seven collections inside one rolled-back transaction. Record counts were unchanged afterward.
 - Vercel deployment URL reads still return 403 during protected deployment alias lookup. Live HTTP end-to-end tests remain unverified; this is a release blocker.
 - The GitHub history credential leak and six public legacy tables without RLS remain unresolved. Do not merge this draft to production until the security and auth work is done.
+
+
+## WhatsApp draft review preview (code staged, database unchanged)
+- On PR #1 the new server function `api/whatsapp-drafts.js`, panel `web/src/WhatsAppDrafts.jsx`, unit tests, and migration `supabase/migrations/20261015_whatsapp_drafts.sql` are committed but **the migration has NOT been applied** to connected production Supabase.
+- Use a separately backed-up isolated database/Preview before applying the draft migration. Verify RLS is enabled on `public.whatsapp_drafts`, and `anon`/`authenticated` have no direct access to the table or RPC; `service_role` only.
+- Leave both `ENABLE_WHATSAPP_DRAFTS=false` (server) and `VITE_ENABLE_WHATSAPP_DRAFTS=false` (frontend) until that isolated test is complete. Never enable them on Production at this stage.
+- In Preview, use an administrator account from `admin_users`. Test create, claim, conflicting second claim, expiry after 15 minutes, heartbeat, corrected PDF version retention, delivery date, duplicate approval, official order serial, and manual confirmation after 10-minute warning. Verify all files remain private, old versions downloadable by admin only, and no WhatsApp message is auto-sent.
+- Real incoming WhatsApp messages/webhooks, staff login/permissions and official customer onboarding remain unimplemented. This functionality must not be presented as a live bot.
+- The GitHub Actions build/tests are mocked for database mutations and **do not** constitute approval of the SQL migration or live preview workflow.
