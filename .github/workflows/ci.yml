@@ -30,6 +30,8 @@ jobs:
         env:
           ELMARWA_SMOKE_URL: https://elmarw-2p6sm8bp0-waled4.vercel.app/
         run: node --test api/preview-smoke.test.js
+      - name: Verify admin role is required before dashboard entry
+        run: node --test web/src/admin-session.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app
