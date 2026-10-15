@@ -2,18 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleApiRequest } from './index.js';
 
-function fakeDatabase() {
+function fakeDatabase(staffOptions = null) {
   const data = {
     clients: [{id: 1, name:'Test client', phone:'01000000001', pass:'legacy-secret'}],
     categories: [{id: 1, name:'Existing category'}],
     subCategories: [{id: 1, name:'Sub', categoryId: 1}],
     products: [{id: 1, name:'Cards', pricesB:{1000:50}, pricesVIP:{1000:40}}],
-    orders: [], employees: [], folders: []
+    orders: [], employees: staffOptions ? [{id:2,name:'Worker',phone:'01012345678',email:'worker@example.com',authUserId:'staff-user',active:true,mustChangePassword:Boolean(staffOptions.mustChangePassword),permissions:staffOptions.permissions||{orders:true}}] : [], folders: []
   };
   const db = {
     auth: {
       getUser: async token => ({
-        data:{user: token === 'admin' ? {id:'admin-user'} : token === 'viewer' ? {id:'viewer-user'} : null},
+        data:{user: token === 'admin' ? {id:'admin-user'} : token === 'viewer' ? {id:'viewer-user'} : token === 'worker' ? {id:'staff-user',email:'worker@example.com',email_confirmed_at:'confirmed'} : null},
         error:null
       })
     },
@@ -141,3 +141,26 @@ test('disabled WhatsApp drafts answer 503 before making any database connection'
     else process.env.ENABLE_WHATSAPP_DRAFTS=was;
   }
 });
+
+test('activated employee may handle authorized orders but cannot read clients or manage staff',async()=>{
+  const db=fakeDatabase({permissions:{orders:true,clients:false,employees:true}})
+  const ok=await request(db,'/api/orders','GET',null,'worker')
+  assert.equal(ok.status,200)
+  const unauthorized=await request(db,'/api/clients','GET',null,'worker')
+  assert.equal(unauthorized.status,403)
+  const forbidden=await request(db,'/api/employees','GET',null,'worker')
+  assert.equal(forbidden.status,403)
+  const write=await request(db,'/api/orders','POST',{status:'جديد',notes:'approved staff'},'worker')
+  assert.equal(write.status,201)
+})
+test('first-password-change employee cannot use workstream permissions',async()=>{
+  const db=fakeDatabase({mustChangePassword:true,permissions:{orders:true}})
+  const denied=await request(db,'/api/orders','GET',null,'worker')
+  assert.equal(denied.status,403)
+})
+test('inactive or unlinked employee never receives private staff access',async()=>{
+  const db=fakeDatabase({permissions:{orders:true}})
+  db.fromOriginalNotNeeded = null
+  const forbidden=await request(db,'/api/clients','GET',null,'viewer')
+  assert.equal(forbidden.status,403)
+})
