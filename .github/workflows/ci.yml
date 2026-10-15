@@ -32,6 +32,8 @@ jobs:
         run: node --test api/preview-smoke.test.js
       - name: Verify admin role is required before dashboard entry
         run: node --test web/src/admin-session.test.js
+      - name: Test employee profile save and error handling
+        run: node --test web/src/employee-save.test.js
       - name: Install web dependencies
         run: npm ci --prefix web
       - name: Build React app
