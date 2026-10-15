@@ -256,7 +256,7 @@ export default function App() {
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) {
-      apiRead('categories', token).then(() => {
+      apiRead('clients', token).then(() => {
         setLoggedEmployee({ name: 'المدير العام', permissions: {
           dashboard: true, employees: true, categories: true,
           products: true, clients: true, orders: true, shipping: true
@@ -466,7 +466,7 @@ export default function App() {
       const auth = await response.json()
       if (!response.ok || !auth.access_token) throw new Error('الإيميل أو كلمة المرور غير صحيحة')
       // التحقق من عضوية admin_users يتم على السيرفر فقط
-      await apiRead('categories', auth.access_token)
+      await apiRead('clients', auth.access_token)
       sessionStorage.setItem(TOKEN_KEY, auth.access_token)
       setLoggedEmployee({ name: 'المدير العام', permissions: {
         dashboard: true, employees: true, categories: true,
