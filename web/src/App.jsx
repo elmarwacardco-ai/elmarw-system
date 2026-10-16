@@ -199,7 +199,15 @@ export default function App() {
   const myOrdersList = orders.filter(o => { if (!loggedClient) return false; const cId = String(o.clientId || ''); const lId = String(loggedClient.id || ''); const cPhone = String(o.clientPhone || '').replace(/\D/g,''); const lPhone = String(loggedClient.phone || '').replace(/\D/g,''); return (cId && lId && cId === lId) || (cPhone && lPhone && cPhone === lPhone) }).sort((a,b)=> b.id - a.id)
   const getPaymentStatus = (total, paid) => { const p = Number(paid)||0; const t = Number(total)||0; if(p<=0) return 'غير مدفوع'; if(p>=t) return 'مدفوع بالكامل'; return 'مدفوع جزئي' }
   const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
-  const updateOrder = async (id, updates) => { const oldOrder = orders.find(o=> o.id===id); await fetch(`${API}/orders/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)}); if(oldOrder && (updates.status || updates.paidAmount!==undefined || updates.paymentMethod)){ const newNotif = { id: Date.now(), orderId: id, clientId: oldOrder.clientId, clientPhone: oldOrder.clientPhone, msg: `طلبك #${id} ${updates.status? `بقى: ${updates.status}`:''} ${updates.paidAmount!==undefined? ` - المدفوع: ${updates.paidAmount}ج`:''}`, date: new Date().toLocaleString('ar-EG'), read: false }; setNotifications(prev=> [newNotif,...prev].slice(0,50)) } loadAll() }
+  const updateOrder = async (id, updates) => {
+    const token = sessionStorage.getItem(TOKEN_KEY)
+    if (!token) throw new Error('يرجى تسجيل دخول المدير')
+    const response = await fetch(`${API}/orders/${id}`, {method:'PUT', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify(updates)})
+    const result = await response.json().catch(()=>({}))
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+    setOrders(prev=>prev.map(o=>String(o.id)===String(id)?{...o,...result}:o))
+    return result
+  }
   const myUnread = notifications.filter(n=> { if(!loggedClient) return false; return (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,'')) &&!n.read })
   const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(!/^01[0-9]{9}$/.test(form.phone)){ alert('الموبايل لازم 11 رقم مصري صحيح'); return } if(form.pass.length<8){ alert('كلمة المرور لازم 8 أحرف على الأقل'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } try { const response = await fetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`); alert('تم التسجيل بنجاح ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); await loadAll(); } catch (error) { alert('فشل تسجيل العميل: ' + error.message); } }
   const handleLogin = async () => {
@@ -341,9 +349,14 @@ export default function App() {
     const saveOrderChanges = async () => {
       const np = Math.max(0, Number(draftPaid)||0)
       setSaving(true)
-      await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod})
-      setSaving(false)
-      alert('تم حفظ تعديلات الأوردر بالكامل ✅')
+      try {
+        await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod})
+        alert('تم حفظ تعديلات الأوردر بالكامل ✅')
+      } catch (error) {
+        alert('فشل حفظ التعديلات: ' + error.message)
+      } finally {
+        setSaving(false)
+      }
     }
     return (
       <div className="admin-order-card" id={`order-${o.id}`} style={{background:'white',borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
@@ -392,6 +405,13 @@ export default function App() {
     return (
       <>
       <style>{`
+        @media (max-width: 700px) {
+          .customer-orders-modal { width:100vw !important; max-width:100vw !important; overflow-x:hidden !important; }
+          .customer-orders-modal .customer-order-layout { display:block !important; }
+          .customer-orders-modal .customer-order-layout > * { width:100% !important; min-width:0 !important; }
+          .customer-orders-modal table { width:100% !important; table-layout:fixed; }
+          .customer-orders-modal td { overflow-wrap:anywhere; word-break:break-word; }
+        }
         .admin-shell, .admin-shell * { box-sizing:border-box; }
         .admin-main { min-width:0; max-width:100%; }
         .admin-order-card { min-width:0; max-width:100%; }
