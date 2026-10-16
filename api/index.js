@@ -30,13 +30,13 @@ function getDatabase() {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Vary', 'Authorization');
-  res.setHeader('Allow', 'GET, HEAD, POST, PUT, OPTIONS');
+  res.setHeader('Allow', 'GET, HEAD, POST, PUT, DELETE, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
 
-  if (!['GET', 'HEAD', 'POST', 'PUT'].includes(req.method)) {
+  if (!['GET', 'HEAD', 'POST', 'PUT', 'DELETE'].includes(req.method)) {
     return res.status(405).json({
       error: 'Method not allowed'
     });
