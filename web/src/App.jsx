@@ -186,9 +186,15 @@ export default function App() {
 
   const safeItems = (o) => { let it = o.items || []; if (typeof it === 'string') { try { it = JSON.parse(it) } catch { it = [] } } return Array.isArray(it)? it : [] }
   const readFileAsDataUrl = (file) => new Promise((resolve, reject) => { if(!file) return resolve(''); const r = new FileReader(); r.onload = () => resolve(r.result || ''); r.onerror = reject; r.readAsDataURL(file) })
-  const downloadOrderFile = (o) => {
-    if(!o.fileData){ alert('الملف الأصلي لهذا الطلب غير محفوظ داخل النظام. الطلبات الجديدة سيتم حفظ الملف معها.'); return }
-    const a = document.createElement('a'); a.href = o.fileData; a.download = o.fileName || `order-${o.id}`; document.body.appendChild(a); a.click(); a.remove()
+  const downloadOrderFile = async (o) => {
+    try {
+      const token=sessionStorage.getItem(TOKEN_KEY) || customerToken;
+      if(!token) throw new Error('يرجى تسجيل الدخول مرة أخرى');
+      const response=await fetch(`${API}/orders/${o.id}/file`,{headers:{Authorization:`Bearer ${token}`}});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!data.url) throw new Error(data.error||'تعذر تحميل الملف');
+      const a=document.createElement('a'); a.href=data.url; a.target='_blank'; a.rel='noopener noreferrer'; document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){alert('فشل تحميل الملف: '+e.message)}
   }
   const orderSearchText = (o) => `${o.clientName||''} ${o.clientPhone||''}`.toLowerCase()
   const visibleDashboardOrders = orders.filter(o => o.status !== 'تم التسليم' && o.status !== 'ملغي' && (!orderSearch.trim() || orderSearchText(o).includes(orderSearch.trim().toLowerCase())))
@@ -320,7 +326,7 @@ export default function App() {
   const handleAddOrderToFolder = async (folderId,orderId) => {
     const f=folders.find(x=>String(x.id)===String(folderId))
     if(!f)return
-    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(f.orderIds||[]).map(String),String(orderId)])]})}
+    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(Array.isArray(f.orderIds)?f.orderIds:[]).map(String),String(orderId)])]})}
     catch(e){alert('فشل إضافة الأوردر للفولدر: '+e.message)}
   }
   const handleMoveOrderToFolder = async (fromFolderId,toFolderId,orderId) => {
@@ -397,7 +403,7 @@ export default function App() {
           </div>
           <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>💰 الدفع الحالي</div><div style={{fontWeight:900,color:'#16a34a',fontSize:'12px'}}>مدفوع {paid}ج</div><div style={{fontSize:'10px',color:remaining>0?'#ef4444':'#16a34a'}}>باقي {remaining}ج</div><div style={{fontSize:'9px',marginTop:'3px'}}>{o.paymentMethod||'نقدي'} • {payStatus}</div></div>
           <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📅 المواعيد</div><div style={{fontSize:'10px',fontWeight:800}}>تنفيذ: {o.executionDate||'-'}</div><div style={{fontSize:'10px',fontWeight:800}}>جاهز: {o.readyDate||'-'}</div></div>
-          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📎 ملف العميل</div><div style={{fontSize:'9px',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o.fileName||'بدون ملف'}</div><button disabled={!o.fileData} onClick={()=>downloadOrderFile(o)} style={{...btnStyle,background:o.fileData?'#2563eb':'#94a3b8',color:'white',margin:'5px 0 0',padding:'5px 8px',fontSize:'10px',width:'100%'}}>⬇️ تحميل الملف</button></div>
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px'}}><div style={{fontSize:'10px',color:'#64748b'}}>📎 ملف العميل</div><div style={{fontSize:'9px',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o.fileName||'بدون ملف'}</div><button onClick={()=>downloadOrderFile(o)} style={{...btnStyle,background:'#2563eb',color:'white',margin:'5px 0 0',padding:'5px 8px',fontSize:'10px',width:'100%'}}>⬇️ تحميل الملف</button></div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr 1fr',gap:'7px',padding:'8px 10px',background:'#f8fafc',borderTop:'1px solid #eef2f7'}}>
           <div><label style={{fontSize:'9px',fontWeight:900}}>🔄 الحالة الجديدة</label><select value={draftStatus} onChange={e=>setDraftStatus(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px',border:`2px solid ${statusColor(draftStatus)}`}}>{orderStatuses.map(st=><option key={st} value={st}>{st}</option>)}</select></div>
