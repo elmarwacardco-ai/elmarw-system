@@ -9,6 +9,34 @@ const DIRECT_UPLOAD_ENABLED = () => process.env.ENABLE_DIRECT_PDF_UPLOAD === 'tr
 const PHONE = /^01\d{9}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const toE164 = phone => '+20' + phone.slice(1);
+// Internal-only login alias; never sent to a customer or used as proof of email/phone ownership.
+const temporaryEmail = phone => 'elmarwa-temporary-' + phone + '@example.com';
+// Test-only phone/password registration. Production can never enable it.
+// A Preview using the existing trial database requires separate owner opt-in,
+// so a generic feature flag cannot silently expose the shared project.
+export function temporarySignupAllowed() {
+  if (process.env.ENABLE_TEMP_PHONE_SIGNUP !== 'true' ||
+      process.env.VERCEL_ENV === 'production') return false;
+  if (process.env.VERCEL_ENV !== 'preview') return true; // local test harness
+  const testRef = String(process.env.ELMARWA_TEMP_SIGNUP_TEST_DB_REF || '');
+  if (!/^[a-z0-9]{20}$/.test(testRef)) return false;
+  if (testRef === 'oosihqinkatldjmciutu' &&
+      process.env.ELMARWA_TEST_DATA_ACK !== 'true') return false;
+  try {
+    const url = new URL(process.env.SUPABASE_URL || '');
+    return url.protocol === 'https:' &&
+      url.hostname === testRef + '.supabase.co' &&
+      !url.username && !url.password;
+  } catch { return false; }
+}
+
+const normalizedEgyptPhone = value => {
+  const raw = String(value || '').trim().replace(/[\s()-]/g, '');
+  if (PHONE.test(raw)) return raw;
+  if (/^\+201\d{9}$/.test(raw)) return '0' + raw.slice(3);
+  if (/^201\d{9}$/.test(raw)) return '0' + raw.slice(2);
+  return '';
+};
 function publicAuthClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -29,7 +57,9 @@ function safeClient(c) {
   return {
     id: c.id, name: c.name, phone: c.phone, company: c.company,
     address: c.address, type: c.type === 'VIP' ? 'VIP' : 'B',
-    balance: Number(c.balance) || 0
+    balance: Number(c.balance) || 0,
+    phoneVerified: c.phoneVerified === true,
+    provisionalSignup: c.provisionalSignup === true
   };
 }
 function parsePrices(p) {
@@ -50,11 +80,22 @@ async function mutate(db, resource, method, id, payload) {
   return data;
 }
 async function login(db, phone, password, auth = publicAuthClient()) {
+  const snapshot = await readData(db);
+  const registered = (snapshot.clients || []).find(c => c.phone === phone);
+  if (temporarySignupAllowed() && registered?.provisionalSignup === true && registered.phoneVerified !== true) {
+    const { data, error } = await auth.auth.signInWithPassword({
+      email: temporaryEmail(phone), password
+    });
+    if (error || !data?.session?.access_token ||
+        data.user?.id !== registered.authUserId ||
+        data.user?.app_metadata?.elmarwa_temp_customer !== true ||
+        String(data.user?.email || '').toLowerCase() !== temporaryEmail(phone)) return null;
+    return {access_token:data.session.access_token,client:safeClient(registered)};
+  }
   const { data, error } = await auth.auth.signInWithPassword({
     phone: toE164(phone), password
   });
   if (error || !data?.session?.access_token) return null;
-  const snapshot = await readData(db);
   const client = (snapshot.clients || []).find(c => c.authUserId === data.user.id && c.phoneVerified === true);
   if (!client || !data.user.phone_confirmed_at || data.user.phone !== toE164(phone)) return null;
   return { access_token: data.session.access_token, client: safeClient(client) };
@@ -100,7 +141,10 @@ async function identity(db, req) {
     (c.phoneVerified === true && data.user.phone_confirmed_at &&
       c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, ''))) ||
     (c.emailVerified === true && data.user.email_confirmed_at && data.user.email &&
-      String(c.email||'').toLowerCase()===data.user.email.toLowerCase())
+      String(c.email||'').toLowerCase()===data.user.email.toLowerCase()) ||
+    (temporarySignupAllowed() && c.provisionalSignup === true && c.phoneVerified !== true &&
+      data.user.app_metadata?.elmarwa_temp_customer === true &&
+      String(data.user.email||'').toLowerCase() === temporaryEmail(c.phone))
   ));
   return { user: data.user, client, snapshot };
 }
@@ -170,6 +214,58 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
   const fileOrderId = parts[3];
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
+    if (action === 'register-temporary' && req.method === 'POST') {
+      // DEVELOPMENT PREVIEW ONLY. This is NOT proof of phone ownership.
+      // The disabled-by-default flag must never be enabled as a substitute
+      // for OTP on a production service containing genuine customer data.
+      if (!temporarySignupAllowed()) {
+        return respond(res, 503, 'التسجيل التجريبي برقم الهاتف غير متاح على قاعدة البيانات الحالية');
+      }
+      const body = parse(req);
+      const phone = String(body.phone || '').trim();
+      const password = String(body.pass || '');
+      const name = String(body.name || '').trim();
+      const company = String(body.company || '').trim();
+      const address = String(body.address || '').trim();
+      const captchaToken = String(body.captchaToken || '');
+      if (!PHONE.test(phone) || password.length < 12 || password.length > 72 ||
+          !name || name.length > 120 || !company || company.length > 120 ||
+          !address || address.length > 250 ||
+          captchaToken.length < 20 || captchaToken.length > 2048) {
+        return respond(res, 400, 'راجع بيانات العميل وكلمة المرور (12 حرفًا على الأقل) والتحقق الأمني');
+      }
+      const snapshot = await readData(db);
+      if ((snapshot.clients || []).some(c => normalizedEgyptPhone(c.phone) === phone)) {
+        return respond(res, 409, 'الرقم مسجل بالفعل. سجّل الدخول أو تواصل مع الإدارة لاستعادة الحساب');
+      }
+      if (!(await captchaVerifier(captchaToken, req))) {
+        return respond(res, 400, 'التحقق الأمني لم ينجح؛ حاول مرة أخرى');
+      }
+      // Supabase Auth stores the password securely. The internal reserved
+      // email is merely a login alias: the actual phone remains unverified.
+      // NEVER store the submitted password in app_data.
+      const {data:created,error:authError} = await db.auth.admin.createUser({
+        email:temporaryEmail(phone), password, email_confirm:true,
+        app_metadata:{elmarwa_temp_customer:true}
+      });
+      if (authError || !created?.user?.id) {
+        return respond(res, 409, 'تعذر إنشاء الحساب؛ الرقم قد يكون مسجلًا. تواصل مع الإدارة');
+      }
+      try {
+        await mutate(db, 'clients', 'POST', null, {
+          name, phone, company, address, type:'B', balance:0,
+          authUserId:created.user.id,
+          provisionalSignup:true, phoneVerified:false, emailVerified:false
+        });
+      } catch (error) {
+        // Avoid leaving an orphaned Auth identity if the database insert fails.
+        try {await db.auth.admin.deleteUser(created.user.id);} catch(cleanupError) {
+          console.error('Temporary signup cleanup failed:',cleanupError.code||cleanupError.message);
+        }
+        throw error;
+      }
+      return res.status(201).json({temporary_account_created:true,phone_verification_required_later:true});
+    }
     if (action === 'register' && req.method === 'POST') {
       // Only activate in Supabase after SMS verification and CAPTCHA are configured.
       if (process.env.ENABLE_CUSTOMER_SIGNUP !== 'true') {
