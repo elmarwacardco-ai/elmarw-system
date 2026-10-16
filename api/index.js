@@ -236,6 +236,22 @@ export default async function handler(req, res) {
       if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر إنشاء رابط تحميل الملف'});
       return res.status(200).json({url:signed.signedUrl});
     }
+    // Read-only wallet balance and history, scoped to authenticated customer or manager.
+    if (key === 'clients' && req.method === 'GET' && pathname.endsWith('/wallet')) {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\\s+(.+)$/i)?.[1];
+      if(!token) return res.status(401).json({error:'Login required'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if(authError||!auth?.user) return res.status(401).json({error:'Invalid session'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      const requested=pathname.split('/')[3];
+      const customerId=admin && /^[0-9a-f-]{36}$/i.test(requested||'') ? requested : auth.user.id;
+      const {data:profile,error:profileError}=await db.from('customer_profiles').select('id,name,balance').eq('id',customerId).maybeSingle();
+      if(profileError||!profile) return res.status(404).json({error:'العميل غير موجود'});
+      const {data:entries,error:entriesError}=await db.from('customer_wallet_ledger').select('id,amount,kind,method,reference,order_id,created_at').eq('customer_id',customerId).order('created_at',{ascending:false}).limit(100);
+      if(entriesError) return res.status(500).json({error:'تعذر تحميل حركات الرصيد'});
+      return res.status(200).json({balance:Number(profile.balance||0),entries:entries||[]});
+    }
     if (key === 'orders' && req.method === 'PUT') {
       const db=getDatabase();
       const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
@@ -256,6 +272,7 @@ export default async function handler(req, res) {
         if (!statuses.includes(body.status)) return res.status(400).json({error:'حالة غير صالحة'});
         details.status=body.status;
       }
+      if (body?.status==='تم التسليم' && Number(details.paidAmount||0)<Number(details.total||0)) return res.status(400).json({error:'لا يمكن تسليم الأوردر قبل سداد المبلغ بالكامل'});
       if (body?.status==='معلق' && !String(body?.holdReason??details.holdReason??'').trim()) return res.status(400).json({error:'اكتب سبب تعليق الأوردر'});
       if (body?.holdReason!==undefined) details.holdReason=String(body.holdReason||'').trim().slice(0,1000);
       if (body?.status!==undefined && body.status!=='معلق') details.holdReason='';
