@@ -41,7 +41,7 @@ function incomingMessages(payload, env) {
         const id = String(message?.id || '');
         const phone = String(message?.from || '');
         // Test mode is single-recipient only. Never infer a client identity from WhatsApp 'from'.
-        if (!/^wamid\.[A-Za-z0-9_.:-]{6,220}$/.test(id) ||
+        if (!/^wamid\.[A-Za-z0-9+/_=:-]{6,240}$/.test(id) ||
             phone !== env.WHATSAPP_TEST_RECIPIENT) continue;
         const kind = String(message.type || 'unknown').slice(0, 30);
         const file = kind === 'document' ? message.document : null;

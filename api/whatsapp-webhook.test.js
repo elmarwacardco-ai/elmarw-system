@@ -74,6 +74,14 @@ test('stores authenticated message once and handles Meta retries',async()=>{
   assert.equal(records.length,1);
   assert.equal(records[0].sender_phone,env.WHATSAPP_TEST_RECIPIENT);
 });
+test('Meta wamid IDs ending in base64 padding are accepted',async()=>{
+  const persisted=[];
+  const db={from(){return {async insert(row){persisted.push(row);return {error:null}}}}};
+  const {bytes,signature}=signed(event('wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQUFERjg0NDEzNDdFODU3MUMxMAA='));
+  const r=await call('POST','/api/whatsapp-webhook',bytes,{'x-hub-signature-256':signature},{dbFactory:()=>db});
+  assert.equal(r.statusCode,200);
+  assert.equal(persisted.length,1);
+});
 test('ignores unknown recipients without querying database',async()=>{
   const {bytes,signature}=signed(event('wamid.ABCDEFG12345','201999999999'));
   const r=await call('POST','/api/whatsapp-webhook',bytes,{'x-hub-signature-256':signature},
