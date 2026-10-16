@@ -223,7 +223,7 @@ export default async function handler(req, res) {
       const id=pathname.split('/')[3];
       if (!/^[0-9a-f-]{36}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صالح'});
       const db=getDatabase();
-      const token=String(req.headers.authorization||'').match(/^Bearer\\s+(.+)$/i)?.[1];
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
       if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول'});
       const {data:auth,error:authError}=await db.auth.getUser(token);
       if (authError||!auth?.user) return res.status(401).json({error:'جلسة الدخول انتهت'});
