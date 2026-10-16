@@ -36,3 +36,17 @@ Rebuild the Preview after changing build-time variables. Validate the public API
 
 ## Owner-confirmed test data (2026-10-16)
 The owner confirmed that the **entire existing Elmarwa system is a test**, and losing test entries is acceptable. This removes the need to provision a second database just to exercise phone registration. To opt in, on the dedicated Vercel Preview branch set `ELMARWA_TEMP_SIGNUP_TEST_DB_REF=oosihqinkatldjmciutu` and `ELMARWA_TEST_DATA_ACK=true`. The public Preview still requires the **existing mandatory server-verified Cloudflare Turnstile** and both registration feature flags; do not enable flags until site and secret keys are in place. Production remains hard-disabled. This opt-in does not make phone numbers verified, permit VIP account claims, or make credential/security issues acceptable. Existing test rows need not be cleared.
+
+
+## Stable test URL and exact Turnstile configuration
+The stable branch alias is `elmarw-git-feature-temporary-phone-registration-20261016-waled4.vercel.app` (verified from the Vercel deployment aliases). Add **that exact hostname** as an allowed hostname in a Cloudflare Turnstile widget, preferably Managed mode; this alias keeps working across commits.
+
+Add the following variables to Vercel project `elmarw`, **Preview only**, restricted to branch `feature/temporary-phone-registration-20261016`:
+- `VITE_TURNSTILE_SITE_KEY` = public Cloudflare Turnstile sitekey
+- `TURNSTILE_SECRET_KEY` = corresponding private secret; never send in chat/commit
+- `VITE_ENABLE_TEMP_PHONE_SIGNUP` = `true`
+- `ENABLE_TEMP_PHONE_SIGNUP` = `true`
+- `ELMARWA_TEMP_SIGNUP_TEST_DB_REF` = `oosihqinkatldjmciutu`
+- `ELMARWA_TEST_DATA_ACK` = `true`
+
+If Email registration is not being tested, set `VITE_ENABLE_CUSTOMER_EMAIL_SIGNUP=false` and `ENABLE_CUSTOMER_EMAIL_SIGNUP=false` on this branch to avoid showing email fields. Rebuild/redeploy **the branch Preview**, not Production, after saving the variables; Vite build-time flags are not retroactive. Until both CAPTCHA keys and both temporary-signup flags are active, registration must remain unavailable. Validate server-side Turnstile, duplicate phone rejection, and creating/login of disposable customer accounts first.
