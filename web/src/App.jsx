@@ -260,8 +260,8 @@ export default function App() {
       })
       const auth = await response.json()
       if (!response.ok || !auth.access_token) throw new Error('الإيميل أو كلمة المرور غير صحيحة')
-      // التحقق من عضوية admin_users يتم على السيرفر فقط
-      await apiRead('categories', auth.access_token)
+      // التحقق من صلاحية المدير عبر مورد محمي، وليس كتالوج المنتجات العام
+      await apiRead('folders', auth.access_token)
       sessionStorage.setItem(TOKEN_KEY, auth.access_token)
       setLoggedEmployee({ name: 'المدير العام', permissions: {
         dashboard: true, employees: true, categories: true,
