@@ -534,7 +534,7 @@ export default function App() {
           .order-summary { grid-template-columns:1fr 1fr !important; }
         }
       `}</style>
-      <style>{`.admin-mobile-toggle{display:none!important}`}</style>
+      <style>{`@media (min-width: 901px){.admin-mobile-toggle{display:none!important}} @media (max-width: 900px){.admin-mobile-toggle{display:inline-flex!important;align-items:center;justify-content:center;min-width:92px}.admin-sidebar.menu-collapsed .admin-menu,.admin-sidebar.menu-collapsed .admin-exit{display:none!important}.admin-sidebar:not(.menu-collapsed) .admin-menu{display:grid!important}}`}</style>
       <div className="admin-shell" style={{ display: 'flex', minHeight: '100vh', direction: 'rtl', fontFamily: 'Tahoma', background: '#f1f5f9' }}>
         <div className={`admin-sidebar ${adminMenuOpen?'':'menu-collapsed'}`} style={{ width: '260px', background: '#0f172a', color: 'white', padding: '20px 10px', position:'sticky', top:0, height:'100vh', overflowY:'auto', boxSizing:'border-box' }}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><h3 style={{textAlign:'center',margin:'8px 0'}}>المروة ✅ - {loggedEmployee?.name}</h3><button type="button" className="admin-mobile-toggle" onClick={()=>setAdminMenuOpen(v=>!v)} style={{...btnStyle,background:'#1d4ed8',color:'white',padding:'8px 12px',margin:0}}>☰ {adminMenuOpen?'إغلاق':'القائمة'}</button></div>
