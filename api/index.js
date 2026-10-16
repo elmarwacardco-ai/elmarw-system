@@ -57,7 +57,7 @@ export default async function handler(req, res) {
 
     if (key === 'payments' && ['GET','POST'].includes(req.method)) {
       const db=getDatabase();
-      const token=String(req.headers.authorization||'').match(/^Bearer\\s+(.+)$/i)?.[1];
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
       if(!token) return res.status(401).json({error:'Login required'});
       const {data:auth,error:authError}=await db.auth.getUser(token);
       if(authError||!auth?.user) return res.status(401).json({error:'Invalid session'});
