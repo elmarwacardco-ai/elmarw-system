@@ -305,23 +305,45 @@ export default function App() {
   }
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; if(price===undefined || price===null || price==='') return null; return price }
   const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
-  const handleCreateFolder = async () => { if(!newFolderName.trim()){ alert('اكتب اسم الفولدر'); return } const newF = { name: newFolderName.trim(), date: new Date().toLocaleString('ar-EG'), status: 'جديد', orderIds: [] }; await fetch(`${API}/folders`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(newF)}); setNewFolderName(''); loadAll() }
-  const handleUpdateFolderStatus = async (folder, newStatus) => { await fetch(`${API}/folders/${folder.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status: newStatus})}); for(const oid of (folder.orderIds||[])){ await fetch(`${API}/orders/${oid}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status: newStatus})}) } loadAll() }
-  const handleAddOrderToFolder = async (folderId, orderId) => { const f = folders.find(x=> x.id===folderId); if(!f) return; const newIds = [...new Set([...(f.orderIds||[]), orderId])]; await fetch(`${API}/folders/${folderId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({orderIds: newIds})}); loadAll() }
-  const handleMoveOrderToFolder = async (fromFolderId, toFolderId, orderId) => {
-    if(!toFolderId || Number(toFolderId)===Number(fromFolderId)) return;
-    const from = folders.find(f=>Number(f.id)===Number(fromFolderId));
-    const to = folders.find(f=>Number(f.id)===Number(toFolderId));
-    if(!to) return;
-    const fromIds = (from?.orderIds||[]).filter(id=>Number(id)!==Number(orderId));
-    const toIds = [...new Set([...(to.orderIds||[]), orderId])];
-    const headers={'Content-Type':'application/json'};
-    if(from) await fetch(`${API}/folders/${from.id}`, {method:'PUT', headers, body:JSON.stringify({orderIds:fromIds})});
-    await fetch(`${API}/folders/${to.id}`, {method:'PUT', headers, body:JSON.stringify({orderIds:toIds})});
-    loadAll();
+  const folderRequest = async (path, method, body) => {
+    const token=sessionStorage.getItem(TOKEN_KEY)
+    if (!token) throw new Error('يرجى تسجيل دخول المدير')
+    const response=await fetch(`${API}/folders${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},...(body!==undefined?{body:JSON.stringify(body)}:{})})
+    const result=await response.json().catch(()=>({}))
+    if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`)
+    await loadAll(token)
+    return result
   }
-  const handleRemoveOrderFromFolder = async (folderId, orderId) => { const f = folders.find(x=> x.id===folderId); const newIds = (f.orderIds||[]).filter(id=> Number(id)!==Number(orderId)); await fetch(`${API}/folders/${folderId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({orderIds: newIds})}); loadAll() }
-  const handleDeleteFolder = async (folder) => { const enteredPass = String(deletePass).trim(); const empPass = String(loggedEmployee?.pass||'').trim(); const isAdmin = Boolean(sessionStorage.getItem(TOKEN_KEY)); if(!isAdmin){ alert('باسورد التأكيد غلط ❌'); return } await fetch(`${API}/folders/${folder.id}`, {method:'DELETE'}); setShowDeleteConfirm(null); setDeletePass(''); loadAll() }
+  const handleCreateFolder = async () => {
+    if(!newFolderName.trim()){alert('اكتب اسم الفولدر');return}
+    try {await folderRequest('','POST',{name:newFolderName.trim()});setNewFolderName('')}
+    catch(e){alert('فشل إنشاء الفولدر: '+e.message)}
+  }
+  const handleUpdateFolderStatus = async (folder,newStatus) => {
+    try {await folderRequest('/'+folder.id,'PUT',{status:newStatus})}
+    catch(e){alert('فشل تحديث الفولدر: '+e.message)}
+  }
+  const handleAddOrderToFolder = async (folderId,orderId) => {
+    const f=folders.find(x=>String(x.id)===String(folderId))
+    if(!f)return
+    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(f.orderIds||[]).map(String),String(orderId)])]})}
+    catch(e){alert('فشل إضافة الأوردر للفولدر: '+e.message)}
+  }
+  const handleMoveOrderToFolder = async (fromFolderId,toFolderId,orderId) => {
+    if(!toFolderId||String(toFolderId)===String(fromFolderId))return
+    await handleAddOrderToFolder(toFolderId,orderId)
+  }
+  const handleRemoveOrderFromFolder = async (folderId,orderId) => {
+    const f=folders.find(x=>String(x.id)===String(folderId))
+    if(!f)return
+    try {await folderRequest('/'+f.id,'PUT',{orderIds:(f.orderIds||[]).filter(id=>String(id)!==String(orderId))})}
+    catch(e){alert('فشل إخراج الأوردر من الفولدر: '+e.message)}
+  }
+  const handleDeleteFolder = async (folder) => {
+    if(!sessionStorage.getItem(TOKEN_KEY)){alert('يرجى تسجيل دخول المدير');return}
+    try {await folderRequest('/'+folder.id,'DELETE');setShowDeleteConfirm(null);setDeletePass('')}
+    catch(e){alert('فشل حذف الفولدر: '+e.message)}
+  }
 
   const ProductCard = ({ product }) => (
     <div style={{ background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
@@ -389,7 +411,7 @@ export default function App() {
         </div>
         <div style={{display:'flex',gap:'7px',alignItems:'center',padding:'7px 10px',flexWrap:'wrap'}}>
           <button onClick={saveOrderChanges} disabled={saving} style={{...btnStyle,background:'#16a34a',color:'white',margin:0,padding:'8px 16px',fontSize:'11px',fontWeight:900}}>{saving?'جاري الحفظ...':'💾 حفظ كل تعديلات الأوردر'}</button>
-          <select value="" onChange={e=>{if(e.target.value)handleAddOrderToFolder(Number(e.target.value),o.id)}} style={{flex:1,minWidth:'180px',padding:'7px 8px',borderRadius:'7px',border:'1px solid #cbd5e1',fontSize:'10px'}}><option value="">⚙️ إضافة لفولدر التشغيل...</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+          <select value="" onChange={e=>{if(e.target.value)handleAddOrderToFolder(e.target.value,o.id)}} style={{flex:1,minWidth:'180px',padding:'7px 8px',borderRadius:'7px',border:'1px solid #cbd5e1',fontSize:'10px'}}><option value="">⚙️ إضافة لفولدر التشغيل...</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
           {o.paymentProof&&<span style={{fontSize:'9px',background:'#dcfce7',color:'#166534',padding:'5px 7px',borderRadius:'7px'}}>📸 تحويل مرفوع</span>}
         </div>
       </div>
@@ -398,8 +420,8 @@ export default function App() {
 
   if(showAdmin){
     const filteredClients = clients.filter(c=>!clientSearch || c.name.includes(clientSearch) || c.phone.includes(clientSearch))
-    const operationOrders = orders.filter(o=>!folders.some(f=> (f.orderIds||[]).map(Number).includes(Number(o.id))) && ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(o.status))
-    const selectedFolder = folders.find(f=>Number(f.id)===Number(selectedFolderId))
+    const operationOrders = orders.filter(o=>!folders.some(f=> (f.orderIds||[]).map(String).includes(String(o.id))) && ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(o.status))
+    const selectedFolder = folders.find(f=>String(f.id)===String(selectedFolderId))
     const orderBelongsToSub = (o, subId) => safeItems(o).some(it=>Number(it.subCategoryId)===Number(subId))
     const orderSubGroups = subCategories.map(sub=>({sub, list: orders.filter(o=>orderBelongsToSub(o, sub.id)).filter(o=>ordersStatusFilter==='الكل'||o.status===ordersStatusFilter)})).filter(g=>g.list.length>0)
     const uncategorizedOrders = orders.filter(o=>{ const its=safeItems(o); return its.length===0 || its.every(it=>!it.subCategoryId) }).filter(o=>ordersStatusFilter==='الكل'||o.status===ordersStatusFilter)
@@ -472,7 +494,7 @@ export default function App() {
             {!selectedFolder ? <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}><h2>⚙️ قسم التشغيل - الفولدرات</h2><button onClick={()=>setShowAdmin(false)} style={{...btnStyle,background:'#0f172a',color:'white'}}>🌐 الرئيسية</button></div>
               <div style={{background:'white',padding:'12px',borderRadius:'12px',marginTop:'10px',display:'flex',gap:'8px'}}><input placeholder="اسم الفولدر الجديد" value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} style={{...inputStyle,margin:0,flex:1}}/><button onClick={handleCreateFolder} style={{...btnStyle,background:'#16a34a',color:'white',margin:0}}>+ إنشاء فولدر</button></div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:'12px',marginTop:'14px'}}>
-                {folders.map(folder=>{ const count=orders.filter(o=>(folder.orderIds||[]).map(Number).includes(Number(o.id))).length; return <div key={folder.id} onClick={()=>setSelectedFolderId(folder.id)} style={{background:'white',padding:'16px',borderRadius:'14px',borderRight:`7px solid ${statusColor(folder.status)}`,boxShadow:'0 3px 10px rgba(15,23,42,.06)',cursor:'pointer'}}>
+                {folders.map(folder=>{ const count=orders.filter(o=>(folder.orderIds||[]).map(String).includes(String(o.id))).length; return <div key={folder.id} onClick={()=>setSelectedFolderId(folder.id)} style={{background:'white',padding:'16px',borderRadius:'14px',borderRight:`7px solid ${statusColor(folder.status)}`,boxShadow:'0 3px 10px rgba(15,23,42,.06)',cursor:'pointer'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b style={{fontSize:'17px'}}>📁 {folder.name}</b><span style={{background:'#dbeafe',color:'#1e40af',padding:'4px 8px',borderRadius:'12px',fontSize:'11px'}}>{count} اوردر</span></div>
                   <div style={{fontSize:'11px',color:'#64748b',marginTop:'8px'}}>📅 {folder.date}</div><div style={{marginTop:'8px',fontSize:'12px',fontWeight:'bold',color:statusColor(folder.status)}}>الحالة: {folder.status}</div>
                   <div style={{display:'flex',gap:'5px',marginTop:'10px'}}><button onClick={e=>{e.stopPropagation();setEditFolderId(folder.id);setEditFolderName(folder.name)}} style={{...btnStyle,background:'#f59e0b',color:'white',fontSize:'10px',margin:0}}>✏️ تعديل</button><button onClick={e=>{e.stopPropagation();setShowDeleteConfirm(folder.id)}} style={{...btnStyle,background:'#ef4444',color:'white',fontSize:'10px',margin:0}}>🗑️ مسح</button></div>
@@ -480,10 +502,10 @@ export default function App() {
                 </div>})}
               </div>
               {folders.length===0 && <div style={{background:'white',padding:'30px',textAlign:'center',borderRadius:'12px',marginTop:'15px'}}>لا يوجد فولدرات - أنشئ أول فولدر</div>}
-              {operationOrders.length>0 && <div style={{background:'white',padding:'14px',borderRadius:'12px',marginTop:'18px'}}><h3>📦 اوردرات بدون فولدر ({operationOrders.length})</h3>{operationOrders.map(o=><div key={o.id} style={{display:'flex',justifyContent:'space-between',gap:'8px',padding:'8px',borderBottom:'1px solid #eee',fontSize:'12px'}}><span>#{o.serialNumber||o.id} - {o.clientName} - {o.total}ج</span><select onChange={e=>{if(e.target.value)handleAddOrderToFolder(Number(e.target.value),o.id)}}><option value="">+ أضف لفولدر</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>)}</div>}
+              {operationOrders.length>0 && <div style={{background:'white',padding:'14px',borderRadius:'12px',marginTop:'18px'}}><h3>📦 اوردرات بدون فولدر ({operationOrders.length})</h3>{operationOrders.map(o=><div key={o.id} style={{display:'flex',justifyContent:'space-between',gap:'8px',padding:'8px',borderBottom:'1px solid #eee',fontSize:'12px'}}><span>#{o.serialNumber||o.id} - {o.clientName} - {o.total}ج</span><select onChange={e=>{if(e.target.value)handleAddOrderToFolder(e.target.value,o.id)}}><option value="">+ أضف لفولدر</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>)}</div>}
             </> : <div>
-              {(()=>{ const folder=selectedFolder; const folderOrders=folder?orders.filter(o=>(folder.orderIds||[]).map(Number).includes(Number(o.id))).sort((a,b)=>b.id-a.id):[]; return <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}><div><button onClick={()=>setSelectedFolderId(null)} style={{...btnStyle,background:'#64748b',color:'white'}}>⬅️ رجوع للفولدرات</button><h2 style={{display:'inline-block',marginRight:'10px'}}>📁 {folder?.name}</h2></div>{folder && <select value={folder.status} onChange={e=>handleUpdateFolderStatus(folder,e.target.value)} style={{padding:'9px',borderRadius:'8px',border:`2px solid ${statusColor(folder.status)}`,fontWeight:'bold'}}>{folderStatuses.map(s=><option key={s} value={s}>{s}</option>)}</select>}</div>
-                {folderOrders.length===0 ? <div style={{background:'white',padding:'40px',textAlign:'center',borderRadius:'12px'}}>الفولدر فارغ</div> : <div style={{marginTop:'12px'}}>{folderOrders.map(o=><div key={o.id}><div style={{background:'#eef2ff',padding:'6px 9px',borderRadius:'8px 8px 0 0',fontSize:'10px',fontWeight:900}}>نقل الأوردر لفولدر آخر: <select onChange={e=>{if(e.target.value)handleMoveOrderToFolder(folder.id,Number(e.target.value),o.id)}} defaultValue="" style={{marginRight:'6px',padding:'4px',borderRadius:'6px'}}><option value="">اختر الفولدر</option>{folders.filter(f=>Number(f.id)!==Number(folder.id)).map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div><OrderAdminCard o={o} folderId={folder.id}/></div>)}</div>}
+              {(()=>{ const folder=selectedFolder; const folderOrders=folder?orders.filter(o=>(folder.orderIds||[]).map(String).includes(String(o.id))).sort((a,b)=>b.id-a.id):[]; return <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}><div><button onClick={()=>setSelectedFolderId(null)} style={{...btnStyle,background:'#64748b',color:'white'}}>⬅️ رجوع للفولدرات</button><h2 style={{display:'inline-block',marginRight:'10px'}}>📁 {folder?.name}</h2></div>{folder && <select value={folder.status} onChange={e=>handleUpdateFolderStatus(folder,e.target.value)} style={{padding:'9px',borderRadius:'8px',border:`2px solid ${statusColor(folder.status)}`,fontWeight:'bold'}}>{folderStatuses.map(s=><option key={s} value={s}>{s}</option>)}</select>}</div>
+                {folderOrders.length===0 ? <div style={{background:'white',padding:'40px',textAlign:'center',borderRadius:'12px'}}>الفولدر فارغ</div> : <div style={{marginTop:'12px'}}>{folderOrders.map(o=><div key={o.id}><div style={{background:'#eef2ff',padding:'6px 9px',borderRadius:'8px 8px 0 0',fontSize:'10px',fontWeight:900}}>نقل الأوردر لفولدر آخر: <select onChange={e=>{if(e.target.value)handleMoveOrderToFolder(folder.id,e.target.value,o.id)}} defaultValue="" style={{marginRight:'6px',padding:'4px',borderRadius:'6px'}}><option value="">اختر الفولدر</option>{folders.filter(f=>String(f.id)!==String(folder.id)).map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div><OrderAdminCard o={o} folderId={folder.id}/></div>)}</div>}
               </>})()}
             </div>}
           </div>}
