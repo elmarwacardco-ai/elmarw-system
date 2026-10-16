@@ -67,6 +67,11 @@ export default async function handler(req, res) {
       const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
       if(!admin) return res.status(403).json({error:'صلاحية الحسابات للمدير فقط'});
       const orderId=pathname.split('/')[3];
+      if(req.method==='GET'&&!orderId){
+        const {data:rows,error}=await db.from('order_payments').select('id,order_id,amount,method,created_at').order('created_at',{ascending:false}).limit(5000);
+        if(error)return res.status(500).json({error:'تعذر تحميل حركات التحصيل'});
+        return res.status(200).json(rows||[]);
+      }
       if(!/^[0-9a-f-]{36}$/i.test(orderId||'')) return res.status(400).json({error:'رقم الأوردر غير صحيح'});
       if(req.method==='GET'){
         const {data:rows,error}=await db.from('order_payments').select('id,amount,method,created_at').eq('order_id',orderId).order('created_at',{ascending:false});
