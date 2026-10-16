@@ -219,6 +219,23 @@ export default async function handler(req, res) {
       if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر فتح الصورة'});
       return res.status(200).json({url:signed.signedUrl});
     }
+    if (key === 'orders' && req.method === 'GET' && pathname.endsWith('/file')) {
+      const id=pathname.split('/')[3];
+      if (!/^[0-9a-f-]{36}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صالح'});
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'جلسة الدخول انتهت'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      const {data:order,error:orderError}=await db.from('customer_orders').select('customer_id,file_path,details').eq('id',id).maybeSingle();
+      if (orderError||!order) return res.status(404).json({error:'الأوردر غير موجود'});
+      if (!admin && order.customer_id!==auth.user.id) return res.status(403).json({error:'غير مسموح بتحميل هذا الملف'});
+      if (!order.file_path) return res.status(404).json({error:'ملف الطلب غير محفوظ'});
+      const {data:signed,error:signError}=await db.storage.from('customer-order-files').createSignedUrl(order.file_path,120,{download:order.details?.fileName||'order-file'});
+      if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر إنشاء رابط تحميل الملف'});
+      return res.status(200).json({url:signed.signedUrl});
+    }
     if (key === 'orders' && req.method === 'PUT') {
       const db=getDatabase();
       const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
