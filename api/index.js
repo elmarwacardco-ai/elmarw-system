@@ -43,14 +43,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const pathname = new URL(
-      req.url,
-      `https://${req.headers.host}`
-    ).pathname;
-
-    const key = pathname
-      .replace(/^\/api\/?/, '')
-      .split('/')[0] || 'categories';
+    const requestUrl = new URL(req.url, `https://${req.headers.host}`);
+    const routedPath = requestUrl.searchParams.get('resource');
+    const pathname = routedPath ? '/api/' + routedPath.replace(/^\/+/, '') : requestUrl.pathname;
+    const key = pathname.replace(/^\/api\/?/, '').split('/')[0] || 'categories';
 
     if (!allowedKeys.has(key)) {
       return res.status(404).json({
