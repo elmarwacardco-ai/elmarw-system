@@ -204,6 +204,17 @@ export default function App() {
       window.location.assign(data.url);
     }catch(e){alert('فشل تحميل الملف: '+e.message)}
   }
+  const viewAdminPaymentProof = async (o) => {
+    try {
+      const token=sessionStorage.getItem(TOKEN_KEY);
+      if(!token){setShowAdmin(false);setShowAdminLogin(true);throw new Error('سجل دخول المدير لعرض إيصال التحويل')}
+      const response=await fetch(`${API}/orders/${o.id}/payment-proof`,{headers:{Authorization:`Bearer ${token}`}});
+      const data=await response.json().catch(()=>({}));
+      if(response.status===401){sessionStorage.removeItem(TOKEN_KEY);setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة المدير انتهت، سجل الدخول مرة أخرى')}
+      if(!response.ok||!data.url)throw new Error(data.error||'تعذر عرض صورة التحويل');
+      window.open(data.url,'_blank','noopener,noreferrer');
+    }catch(error){alert('فشل عرض التحويل: '+error.message)}
+  }
   const orderSearchText = (o) => `${o.clientName||''} ${o.clientPhone||''}`.toLowerCase()
   const visibleDashboardOrders = orders.filter(o => o.status !== 'تم التسليم' && o.status !== 'ملغي' && (!orderSearch.trim() || orderSearchText(o).includes(orderSearch.trim().toLowerCase())))
   const myOrdersList = orders.filter(o => { if (!loggedClient) return false; const cId = String(o.clientId || ''); const lId = String(loggedClient.id || ''); const cPhone = String(o.clientPhone || '').replace(/\D/g,''); const lPhone = String(loggedClient.phone || '').replace(/\D/g,''); return (cId && lId && cId === lId) || (cPhone && lPhone && cPhone === lPhone) }).sort((a,b)=> b.id - a.id)
@@ -398,7 +409,7 @@ export default function App() {
             <b style={{fontSize:'13px'}}>👤 العميل: {o.clientName}</b>
             <span style={{fontSize:'11px',color:'#64748b'}}>📞 {o.clientPhone}</span>
             {o.workerName && <span style={{background:'#e0e7ff',color:'#3730a3',padding:'3px 8px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>👷 الشغال: {o.workerName}</span>}
-            <span style={{background:'#0f172a',color:'white',padding:'2px 7px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>🔢 {o.serialNumber||o.id}</span>
+            <span style={{background:'#0f172a',color:'white',padding:'2px 7px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>🔢 {o.serialNumber||o.id}</span>{(()=>{const found=folders.find(f=>(f.orderIds||[]).map(String).includes(String(o.id)));return <span style={{background:found?'#dbeafe':'#f1f5f9',color:found?'#1e40af':'#475569',padding:'3px 8px',borderRadius:10,fontSize:10,fontWeight:800}}>📁 {found?found.name:'بدون فولدر'}</span>})()}
             <span style={{background:statusColor(o.status),color:'white',padding:'3px 9px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>{o.status||'جديد'}</span>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}><span style={{fontSize:'11px',color:'#475569'}}>📅 {o.date}</span><b style={{fontSize:'13px',color:'#16a34a'}}>{total}ج</b><button onClick={()=>printSticker(o)} style={{...btnStyle,background:'#111827',color:'white',padding:'4px 8px',fontSize:'10px',margin:0}}>🖨️ استيكر</button></div>
@@ -422,7 +433,7 @@ export default function App() {
         <div style={{display:'flex',gap:'7px',alignItems:'center',padding:'7px 10px',flexWrap:'wrap'}}>
           <button onClick={saveOrderChanges} disabled={saving} style={{...btnStyle,background:'#16a34a',color:'white',margin:0,padding:'8px 16px',fontSize:'11px',fontWeight:900}}>{saving?'جاري الحفظ...':'💾 حفظ كل تعديلات الأوردر'}</button>
           <select value="" onChange={e=>{if(e.target.value)handleAddOrderToFolder(e.target.value,o.id)}} style={{flex:1,minWidth:'180px',padding:'7px 8px',borderRadius:'7px',border:'1px solid #cbd5e1',fontSize:'10px'}}><option value="">⚙️ إضافة لفولدر التشغيل...</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
-          {o.paymentProof&&<span style={{fontSize:'9px',background:'#dcfce7',color:'#166534',padding:'5px 7px',borderRadius:'7px'}}>📸 تحويل مرفوع</span>}
+          {o.paymentProof&&<button type="button" onClick={()=>viewAdminPaymentProof(o)} style={{fontSize:'10px',background:'#dcfce7',color:'#166534',padding:'7px 10px',borderRadius:'7px',border:'1px solid #86efac',cursor:'pointer',fontWeight:800}}>📸 عرض التحويل المرفوع</button>}
         </div>
       </div>
     )
