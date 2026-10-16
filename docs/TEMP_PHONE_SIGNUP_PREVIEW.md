@@ -33,3 +33,6 @@ The test deployment must have its **own** Supabase project, its own Auth users, 
 - Finally set `ENABLE_TEMP_PHONE_SIGNUP=true` and `VITE_ENABLE_TEMP_PHONE_SIGNUP=true` **only** for the isolated branch.
 
 Rebuild the Preview after changing build-time variables. Validate the public API catalog and unauthenticated access rules, then register only fictional customers, refresh and check the isolated database. If any of the conditions above is missing, keep both registration flags false.
+
+## Owner-confirmed test data (2026-10-16)
+The owner confirmed that the **entire existing Elmarwa system is a test**, and losing test entries is acceptable. This removes the need to provision a second database just to exercise phone registration. To opt in, on the dedicated Vercel Preview branch set `ELMARWA_TEMP_SIGNUP_TEST_DB_REF=oosihqinkatldjmciutu` and `ELMARWA_TEST_DATA_ACK=true`. The public Preview still requires the **existing mandatory server-verified Cloudflare Turnstile** and both registration feature flags; do not enable flags until site and secret keys are in place. Production remains hard-disabled. This opt-in does not make phone numbers verified, permit VIP account claims, or make credential/security issues acceptable. Existing test rows need not be cleared.
