@@ -399,20 +399,31 @@ export default function App() {
     const items = safeItems(o)
     const total = Number(o.total) || 0
     const [draftStatus, setDraftStatus] = useState(o.status || 'جديد')
-    const [draftPaid, setDraftPaid] = useState(String(o.paidAmount || 0))
+    const [draftPaid, setDraftPaid] = useState('')
     const [draftMethod, setDraftMethod] = useState(o.paymentMethod || 'نقدي')
     const [draftHoldReason,setDraftHoldReason]=useState(o.holdReason||'')
     const [saving, setSaving] = useState(false)
-    useEffect(() => { setDraftStatus(o.status || 'جديد'); setDraftPaid(String(o.paidAmount || 0)); setDraftMethod(o.paymentMethod || 'نقدي'); setDraftHoldReason(o.holdReason||'') }, [o.id, o.status, o.paidAmount, o.paymentMethod])
+    useEffect(() => { setDraftStatus(o.status || 'جديد'); setDraftPaid(''); setDraftMethod(o.paymentMethod || 'نقدي'); setDraftHoldReason(o.holdReason||'') }, [o.id, o.status, o.paidAmount, o.paymentMethod])
     const paid = Number(o.paidAmount) || 0
     const remaining = total - paid
     const payStatus = o.paymentStatus || getPaymentStatus(total, paid)
     const saveOrderChanges = async () => {
-      const np = Math.max(0, Number(draftPaid)||0)
+      const np = Number(draftPaid||0)
+      if(!Number.isFinite(np)||np<0||np>remaining){alert('مبلغ الدفعة أكبر من المتبقي');return}
       if(draftStatus==='معلق'&&!draftHoldReason.trim()){alert('اكتب سبب تعليق الأوردر قبل الحفظ');return}
       setSaving(true)
       try {
-        await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod,holdReason:draftStatus==='معلق'?draftHoldReason.trim():''})
+        if(np>0){
+          const token=sessionStorage.getItem(TOKEN_KEY);
+          const response=await fetch(`${API}/payments/${o.id}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({amount:np,method:draftMethod})});
+          const result=await response.json().catch(()=>({}));
+          if(!response.ok)throw new Error(result.error||'تعذر تسجيل الدفعة');
+          setDraftPaid('');
+          await loadAll(token);
+        }
+        if(draftStatus!==o.status||draftHoldReason.trim()!==(o.holdReason||'')){
+          await updateOrder(o.id,{status:draftStatus,holdReason:draftStatus==='معلق'?draftHoldReason.trim():''});
+        }
         alert('تم حفظ تعديلات الأوردر بالكامل ✅')
       } catch (error) {
         alert('فشل حفظ التعديلات: ' + error.message)
@@ -445,8 +456,8 @@ export default function App() {
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr 1fr',gap:'7px',padding:'8px 10px',background:'#f8fafc',borderTop:'1px solid #eef2f7'}}>
           <div><label style={{fontSize:'9px',fontWeight:900}}>🔄 الحالة الجديدة</label><select value={draftStatus} onChange={e=>setDraftStatus(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px',border:`2px solid ${statusColor(draftStatus)}`}}>{orderStatuses.map(st=><option key={st} value={st}>{st}</option>)}</select></div>
-          <div><label style={{fontSize:'9px',fontWeight:900}}>💰 المبلغ المدفوع</label><input type="number" value={draftPaid} onChange={e=>setDraftPaid(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}/></div>
-          <div><label style={{fontSize:'9px',fontWeight:900}}>💳 طريقة الدفع</label><select value={draftMethod} onChange={e=>setDraftMethod(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}>{paymentMethods.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div><label style={{fontSize:'9px',fontWeight:900}}>💰 إضافة دفعة جديدة (المتبقي {remaining}ج)</label><input type="number" min="0" max={remaining} placeholder="مبلغ الدفعة" value={draftPaid} onChange={e=>setDraftPaid(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}/></div>
+          <div><label style={{fontSize:'9px',fontWeight:900}}>💳 طريقة الدفع</label><select value={draftMethod} onChange={e=>setDraftMethod(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}>{paymentMethods.filter(m=>m!=='آجل').map(m=><option key={m} value={m}>{m}</option>)}</select></div>
         </div>
         {draftStatus==='معلق'&&<div style={{padding:'8px 10px',background:'#fffbeb',borderTop:'1px solid #fcd34d'}}><label style={{fontSize:12,fontWeight:800,color:'#92400e'}}>⚠️ سبب تعليق الأوردر (إلزامي)</label><textarea value={draftHoldReason} onChange={e=>setDraftHoldReason(e.target.value)} maxLength={1000} rows={2} placeholder="اكتب سبب التعليق هنا..." style={{...inputStyle,width:'100%',marginTop:5}}/></div>}
         {o.status==='معلق'&&o.holdReason&&<div style={{padding:'8px 10px',background:'#fef3c7',color:'#92400e',fontSize:12}}>⏸️ سبب التعليق: {o.holdReason}</div>}
