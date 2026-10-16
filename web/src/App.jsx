@@ -196,9 +196,10 @@ export default function App() {
   const downloadOrderFile = async (o) => {
     try {
       const token=showAdmin ? sessionStorage.getItem(TOKEN_KEY) : customerToken;
-      if(!token) throw new Error('يرجى تسجيل الدخول مرة أخرى');
+      if(!token) {setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة المدير غير موجودة. سجل دخول المدير من جديد ثم حاول التحميل')}
       const response=await fetch(`${API}/orders/${o.id}/file`,{headers:{Authorization:`Bearer ${token}`}});
       const data=await response.json().catch(()=>({}));
+      if(response.status===401){sessionStorage.removeItem(TOKEN_KEY);setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة الدخول انتهت. سجل دخول المدير مرة أخرى')}
       if(!response.ok||!data.url) throw new Error(data.error||'تعذر تحميل الملف');
       window.location.assign(data.url);
     }catch(e){alert('فشل تحميل الملف: '+e.message)}
@@ -314,9 +315,10 @@ export default function App() {
   const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
   const folderRequest = async (path, method, body) => {
     const token=sessionStorage.getItem(TOKEN_KEY)
-    if (!token) throw new Error('يرجى تسجيل دخول المدير')
+    if (!token) {setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة المدير غير موجودة، سجل الدخول مجددًا')}
     const response=await fetch(`${API}/folders${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},...(body!==undefined?{body:JSON.stringify(body)}:{})})
     const result=await response.json().catch(()=>({}))
+    if(response.status===401){sessionStorage.removeItem(TOKEN_KEY);setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة المدير انتهت، سجل الدخول مجددًا')}
     if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`)
     await loadAll(token)
     return result
