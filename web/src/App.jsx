@@ -164,11 +164,6 @@ export default function App() {
   const btnStyle = { padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', margin: '5px' }
   const inputStyle = { display: 'block', width: '100%', margin: '10px 0', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '14px' }
 
-  const generateSerial = () => {
-    const d = new Date();
-    return `M-${d.getFullYear().toString().slice(-2)}${(d.getMonth()+1).toString().padStart(2,'0')}-${Math.floor(100000 + Math.random()*900000)}`;
-  }
-
   const printSticker = (o) => {
     const w = window.open('', '_blank', 'width=400,height=250');
     w.document.write(`
