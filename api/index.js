@@ -247,7 +247,7 @@ export default async function handler(req, res) {
       const id=pathname.split('/')[3];
       if (!/^[0-9a-f-]{36}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صالح'});
       const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
-      const statuses=['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم','ملغي'];
+      const statuses=['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','معلق','تم التسليم','ملغي'];
       const methods=['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'];
       const {data:record,error:readError}=await db.from('customer_orders').select('details').eq('id',id).maybeSingle();
       if (readError||!record) return res.status(404).json({error:'الطلب غير موجود'});
@@ -256,6 +256,9 @@ export default async function handler(req, res) {
         if (!statuses.includes(body.status)) return res.status(400).json({error:'حالة غير صالحة'});
         details.status=body.status;
       }
+      if (body?.status==='معلق' && !String(body?.holdReason??details.holdReason??'').trim()) return res.status(400).json({error:'اكتب سبب تعليق الأوردر'});
+      if (body?.holdReason!==undefined) details.holdReason=String(body.holdReason||'').trim().slice(0,1000);
+      if (body?.status!==undefined && body.status!=='معلق') details.holdReason='';
       if (body?.paidAmount!==undefined) {
         const amount=Number(body.paidAmount);
         if (!Number.isFinite(amount)||amount<0||amount>Number(details.total||0)) return res.status(400).json({error:'المبلغ المدفوع غير صحيح'});
