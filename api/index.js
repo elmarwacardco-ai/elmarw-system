@@ -30,13 +30,13 @@ function getDatabase() {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Vary', 'Authorization');
-  res.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+  res.setHeader('Allow', 'GET, HEAD, POST, PUT, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
 
-  if (!['GET', 'HEAD', 'POST'].includes(req.method)) {
+  if (!['GET', 'HEAD', 'POST', 'PUT'].includes(req.method)) {
     return res.status(405).json({
       error: 'Method not allowed'
     });
@@ -102,6 +102,40 @@ export default async function handler(req, res) {
       const items = record?.data?.[key] ?? [];
       if (!Array.isArray(items)) return res.status(500).json({error:'Invalid catalog'});
       return res.status(200).json(items);
+    }
+    if (key === 'orders' && req.method === 'PUT') {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل دخول المدير'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'جلسة المدير غير صالحة'});
+      const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if (adminError||!admin) return res.status(403).json({error:'غير مسموح بتعديل الطلب'});
+      const id=pathname.split('/')[3];
+      if (!/^[0-9a-f-]{36}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صالح'});
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+      const statuses=['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم','ملغي'];
+      const methods=['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'];
+      const {data:record,error:readError}=await db.from('customer_orders').select('details').eq('id',id).maybeSingle();
+      if (readError||!record) return res.status(404).json({error:'الطلب غير موجود'});
+      const details={...record.details};
+      if (body?.status!==undefined) {
+        if (!statuses.includes(body.status)) return res.status(400).json({error:'حالة غير صالحة'});
+        details.status=body.status;
+      }
+      if (body?.paidAmount!==undefined) {
+        const amount=Number(body.paidAmount);
+        if (!Number.isFinite(amount)||amount<0||amount>Number(details.total||0)) return res.status(400).json({error:'المبلغ المدفوع غير صحيح'});
+        details.paidAmount=amount;
+      }
+      if (body?.paymentMethod!==undefined) {
+        if (!methods.includes(body.paymentMethod)) return res.status(400).json({error:'طريقة دفع غير صالحة'});
+        details.paymentMethod=body.paymentMethod;
+      }
+      details.paymentStatus=Number(details.paidAmount||0)>=Number(details.total||0)?'مدفوع بالكامل':Number(details.paidAmount||0)>0?'مدفوع جزئي':'غير مدفوع';
+      const {data:updated,error:updateError}=await db.from('customer_orders').update({details}).eq('id',id).select('id,details').single();
+      if (updateError||!updated) return res.status(500).json({error:'فشل حفظ تعديلات الأوردر'});
+      return res.status(200).json({...updated.details,id:updated.id});
     }
     if (key === 'orders' && req.method === 'POST') {
       const db = getDatabase();
