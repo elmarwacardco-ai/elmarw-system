@@ -86,7 +86,7 @@ export default async function handler(req, res) {
     // Customer login and profile retrieval require a valid Auth token.
     if (key === 'clients' && req.method === 'GET' && new URL(req.url,`https://${req.headers.host}`).searchParams.get('self') === '1') {
       const db = getDatabase();
-      const match = String(req.headers.authorization || '').match(/^Bearer\\s+(.+)$/i);
+      const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
       if (!match) return res.status(401).json({error:'Login required'});
       const {data: auth, error: authError} = await db.auth.getUser(match[1]);
       if (authError || !auth?.user) return res.status(401).json({error:'Invalid session'});
