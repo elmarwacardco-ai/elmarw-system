@@ -435,6 +435,20 @@ export default function App() {
     const uncategorizedOrders = orders.filter(o=>{ const its=safeItems(o); return its.length===0 || its.every(it=>!it.subCategoryId) }).filter(o=>ordersStatusFilter==='الكل'||o.status===ordersStatusFilter)
     return (
       <>
+      <div style={{position:'fixed',bottom:14,left:14,zIndex:110}}>
+        <button type="button" onClick={()=>setShowStickerSettings(true)} style={{...btnStyle,background:'#1e3a8a',color:'white',fontSize:12,padding:'9px 12px',boxShadow:'0 3px 12px #0003'}}>⚙️ إعدادات الاستيكر</button>
+      </div>
+      {showStickerSettings && <div style={{position:'fixed',inset:0,background:'#0009',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center',padding:12}}>
+        <div style={{background:'white',borderRadius:14,padding:20,width:'100%',maxWidth:360,direction:'rtl'}}>
+          <h3 style={{marginTop:0}}>⚙️ إعدادات طباعة الاستيكر</h3>
+          <p style={{fontSize:12,color:'#475569'}}>المقاس بالسنتيمتر. الافتراضي 4 × 2 سم.</p>
+          <label>العرض (سم)<input type="number" min="2" max="15" step=".1" value={stickerSize.width} onChange={e=>setStickerSize(v=>({...v,width:e.target.value}))} style={inputStyle}/></label>
+          <label>الارتفاع (سم)<input type="number" min="1" max="10" step=".1" value={stickerSize.height} onChange={e=>setStickerSize(v=>({...v,height:e.target.value}))} style={inputStyle}/></label>
+          <p style={{fontSize:12}}>البيانات: السيريال – اسم العميل – اسم الشغل – تاريخ الطلب</p>
+          <button onClick={()=>{const w=Number(stickerSize.width),h=Number(stickerSize.height);if(w<2||w>15||h<1||h>10||!Number.isFinite(w)||!Number.isFinite(h)){alert('العرض من 2 إلى 15 سم والارتفاع من 1 إلى 10 سم');return}localStorage.setItem('elmarw_sticker_size',JSON.stringify({width:w,height:h}));setShowStickerSettings(false)}} style={{...btnStyle,background:'#16a34a',color:'white'}}>حفظ الإعدادات</button>
+          <button onClick={()=>setShowStickerSettings(false)} style={btnStyle}>إغلاق</button>
+        </div>
+      </div>}
       <style>{`
         @media (max-width: 700px) {
           .customer-orders-modal { width:100vw !important; max-width:100vw !important; overflow-x:hidden !important; }
