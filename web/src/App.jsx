@@ -321,7 +321,7 @@ export default function App() {
   const handleAddOrderToFolder = async (folderId,orderId) => {
     const f=folders.find(x=>String(x.id)===String(folderId))
     if(!f)return
-    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(f.orderIds||[]).map(String),String(orderId)])]}); const order=orders.find(o=>String(o.id)===String(orderId)); if(order?.status==='جديد') { await updateOrder(orderId,{status:'قيد التنفيذ'}); await loadAll(sessionStorage.getItem(TOKEN_KEY)); } }
+    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(f.orderIds||[]).map(String),String(orderId)])]})}
     catch(e){alert('فشل إضافة الأوردر للفولدر: '+e.message)}
   }
   const handleMoveOrderToFolder = async (fromFolderId,toFolderId,orderId) => {
