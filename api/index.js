@@ -103,6 +103,51 @@ export default async function handler(req, res) {
       if (!Array.isArray(items)) return res.status(500).json({error:'Invalid catalog'});
       return res.status(200).json(items);
     }
+    // Upload real payment screenshot, not just its filename.
+    if (key === 'orders' && req.method === 'POST' && pathname.endsWith('/payment-proof')) {
+      const id=pathname.split('/')[3];
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صحيح'});
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'جلسة الدخول انتهت'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      const {data:order,error:orderError}=await db.from('customer_orders').select('customer_id,details').eq('id',id).maybeSingle();
+      if (orderError||!order) return res.status(404).json({error:'الأوردر غير موجود'});
+      if (!admin&&order.customer_id!==auth.user.id) return res.status(403).json({error:'غير مسموح برفع ملف لهذا الأوردر'});
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+      const mime=String(body?.mime||'');
+      const encoded=String(body?.fileData||'');
+      if (!['image/jpeg','image/png','image/webp'].includes(mime)||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(encoded)) return res.status(400).json({error:'ارفع صورة JPG أو PNG أو WEBP'});
+      const bytes=Buffer.from(encoded.slice(encoded.indexOf(',')+1),'base64');
+      if (!bytes.length||bytes.length>3*1024*1024) return res.status(413).json({error:'حجم الصورة لازم أقل من 3 ميجابايت'});
+      const ext=mime==='image/png'?'png':mime==='image/webp'?'webp':'jpg';
+      const path=order.customer_id+'/payment-proofs/'+id+'-'+crypto.randomUUID()+'.'+ext;
+      const {error:uploadError}=await db.storage.from('customer-order-files').upload(path,bytes,{contentType:mime,upsert:false});
+      if (uploadError) return res.status(500).json({error:'فشل رفع الصورة إلى التخزين'});
+      const details={...order.details,paymentProof:String(body.fileName||'صورة تحويل').slice(0,180),paymentProofPath:path};
+      const {error:saveError}=await db.from('customer_orders').update({details}).eq('id',id);
+      if (saveError) {await db.storage.from('customer-order-files').remove([path]);return res.status(500).json({error:'فشل حفظ مرفق التحويل'});}
+      return res.status(200).json({paymentProof:details.paymentProof,paymentProofPath:path});
+    }
+    if (key === 'orders' && req.method === 'GET' && pathname.endsWith('/payment-proof')) {
+      const id=pathname.split('/')[3];
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id||'')) return res.status(400).json({error:'رقم الطلب غير صحيح'});
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'جلسة غير صالحة'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      const {data:order}=await db.from('customer_orders').select('customer_id,details').eq('id',id).maybeSingle();
+      if (!order) return res.status(404).json({error:'الأوردر غير موجود'});
+      if (!admin&&order.customer_id!==auth.user.id) return res.status(403).json({error:'غير مسموح'});
+      if (!order.details?.paymentProofPath) return res.status(404).json({error:'لا يوجد مرفق'});
+      const {data:signed,error:signError}=await db.storage.from('customer-order-files').createSignedUrl(order.details.paymentProofPath,60);
+      if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر فتح الصورة'});
+      return res.status(200).json({url:signed.signedUrl});
+    }
     if (key === 'orders' && req.method === 'PUT') {
       const db=getDatabase();
       const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
