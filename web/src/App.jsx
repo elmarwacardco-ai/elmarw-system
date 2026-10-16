@@ -64,7 +64,7 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   const [deletePass, setDeletePass] = useState('')
   const quantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000]
-  const orderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم','ملغي']
+  const orderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','معلق','تم التسليم','ملغي']
   const folderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم']
   const paymentMethods = ['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل']
 
@@ -219,7 +219,7 @@ export default function App() {
   const visibleDashboardOrders = orders.filter(o => o.status !== 'تم التسليم' && o.status !== 'ملغي' && (!orderSearch.trim() || orderSearchText(o).includes(orderSearch.trim().toLowerCase())))
   const myOrdersList = orders.filter(o => { if (!loggedClient) return false; const cId = String(o.clientId || ''); const lId = String(loggedClient.id || ''); const cPhone = String(o.clientPhone || '').replace(/\D/g,''); const lPhone = String(loggedClient.phone || '').replace(/\D/g,''); return (cId && lId && cId === lId) || (cPhone && lPhone && cPhone === lPhone) }).sort((a,b)=> b.id - a.id)
   const getPaymentStatus = (total, paid) => { const p = Number(paid)||0; const t = Number(total)||0; if(p<=0) return 'غير مدفوع'; if(p>=t) return 'مدفوع بالكامل'; return 'مدفوع جزئي' }
-  const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
+  const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='معلق') return '#d97706'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
   const updateOrder = async (id, updates) => {
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (!token) throw new Error('يرجى تسجيل دخول المدير')
@@ -385,16 +385,18 @@ export default function App() {
     const [draftStatus, setDraftStatus] = useState(o.status || 'جديد')
     const [draftPaid, setDraftPaid] = useState(String(o.paidAmount || 0))
     const [draftMethod, setDraftMethod] = useState(o.paymentMethod || 'نقدي')
+    const [draftHoldReason,setDraftHoldReason]=useState(o.holdReason||'')
     const [saving, setSaving] = useState(false)
-    useEffect(() => { setDraftStatus(o.status || 'جديد'); setDraftPaid(String(o.paidAmount || 0)); setDraftMethod(o.paymentMethod || 'نقدي') }, [o.id, o.status, o.paidAmount, o.paymentMethod])
+    useEffect(() => { setDraftStatus(o.status || 'جديد'); setDraftPaid(String(o.paidAmount || 0)); setDraftMethod(o.paymentMethod || 'نقدي'); setDraftHoldReason(o.holdReason||'') }, [o.id, o.status, o.paidAmount, o.paymentMethod])
     const paid = Number(o.paidAmount) || 0
     const remaining = total - paid
     const payStatus = o.paymentStatus || getPaymentStatus(total, paid)
     const saveOrderChanges = async () => {
       const np = Math.max(0, Number(draftPaid)||0)
+      if(draftStatus==='معلق'&&!draftHoldReason.trim()){alert('اكتب سبب تعليق الأوردر قبل الحفظ');return}
       setSaving(true)
       try {
-        await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod})
+        await updateOrder(o.id, {status:draftStatus, paidAmount:np, paymentStatus:getPaymentStatus(total,np), paymentMethod:draftMethod,holdReason:draftStatus==='معلق'?draftHoldReason.trim():''})
         alert('تم حفظ تعديلات الأوردر بالكامل ✅')
       } catch (error) {
         alert('فشل حفظ التعديلات: ' + error.message)
@@ -430,6 +432,8 @@ export default function App() {
           <div><label style={{fontSize:'9px',fontWeight:900}}>💰 المبلغ المدفوع</label><input type="number" value={draftPaid} onChange={e=>setDraftPaid(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}/></div>
           <div><label style={{fontSize:'9px',fontWeight:900}}>💳 طريقة الدفع</label><select value={draftMethod} onChange={e=>setDraftMethod(e.target.value)} style={{...inputStyle,margin:'3px 0 0',padding:'7px',fontSize:'11px'}}>{paymentMethods.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
         </div>
+        {draftStatus==='معلق'&&<div style={{padding:'8px 10px',background:'#fffbeb',borderTop:'1px solid #fcd34d'}}><label style={{fontSize:12,fontWeight:800,color:'#92400e'}}>⚠️ سبب تعليق الأوردر (إلزامي)</label><textarea value={draftHoldReason} onChange={e=>setDraftHoldReason(e.target.value)} maxLength={1000} rows={2} placeholder="اكتب سبب التعليق هنا..." style={{...inputStyle,width:'100%',marginTop:5}}/></div>}
+        {o.status==='معلق'&&o.holdReason&&<div style={{padding:'8px 10px',background:'#fef3c7',color:'#92400e',fontSize:12}}>⏸️ سبب التعليق: {o.holdReason}</div>}
         <div style={{display:'flex',gap:'8px',alignItems:'center',padding:'9px 10px',flexWrap:'wrap',direction:'rtl',justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:'7px',flex:'1 1 230px',flexWrap:'wrap'}}>
             {(()=>{const found=folders.find(f=>(f.orderIds||[]).map(String).includes(String(o.id)));return <span style={{background:found?'#dbeafe':'#f1f5f9',color:found?'#1e40af':'#475569',padding:'7px 9px',borderRadius:8,fontSize:11,fontWeight:800}}>📁 مكان الأوردر: {found?found.name:'بدون فولدر'}</span>})()}
@@ -514,7 +518,7 @@ export default function App() {
               <button onClick={()=>setOrderSearch('')} style={{...btnStyle,margin:0,background:'#e2e8f0',color:'#334155'}}>مسح البحث</button>
               <span style={{background:'#dbeafe',color:'#1e40af',padding:'8px 12px',borderRadius:'18px',fontWeight:900,fontSize:'12px'}}>{visibleDashboardOrders.length} طلب</span>
             </div>
-            <div style={{background:'white',padding:'9px',borderRadius:'12px',marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>{['الكل',...orderStatuses.filter(s=>s!=='تم التسليم'&&s!=='ملغي')].map(s=><button key={s} onClick={()=>setOrdersStatusFilter(s)} style={{...btnStyle,margin:0,padding:'7px 11px',fontSize:'11px',background:ordersStatusFilter===s?statusColor(s):'#e2e8f0',color:ordersStatusFilter===s?'white':'#334155'}}>{s}</button>)}</div>
+            <div style={{background:'white',padding:'9px',borderRadius:'12px',marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>{orderStatuses.filter(s=>s!=='تم التسليم'&&s!=='ملغي').map(s=><button key={s} onClick={()=>setOrdersStatusFilter(s)} style={{...btnStyle,margin:0,padding:'7px 11px',fontSize:'11px',background:ordersStatusFilter===s?statusColor(s):'#e2e8f0',color:ordersStatusFilter===s?'white':'#334155'}}>{s}</button>)}</div>
             <div style={{marginTop:'12px'}}>
               {(()=>{
                 const filtered = visibleDashboardOrders.filter(o=>ordersStatusFilter==='الكل'||o.status===ordersStatusFilter)
