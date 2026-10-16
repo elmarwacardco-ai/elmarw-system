@@ -143,15 +143,15 @@ export default function App() {
     }).catch(()=>{sessionStorage.removeItem('elmarw_customer_token');setCustomerToken('');setLoggedClient(null)})
     loadCatalog()
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
-    const token = sessionStorage.getItem(TOKEN_KEY)
-    if (token) {
-      apiRead('categories', token).then(() => {
+    const adminToken = sessionStorage.getItem(TOKEN_KEY)
+    if (adminToken) {
+      apiRead('categories', adminToken).then(() => {
         setLoggedEmployee({ name: 'المدير العام', permissions: {
           dashboard: true, employees: true, categories: true,
           products: true, clients: true, orders: true, shipping: true
         } })
         setShowAdmin(true)
-        loadAll(token)
+        loadAll(adminToken)
       }).catch(() => sessionStorage.removeItem(TOKEN_KEY))
     }
     const nt = localStorage.getItem('notifications')
@@ -270,6 +270,7 @@ export default function App() {
   }
   const handlePlaceOrder = async () => {
     if(cart.length === 0){ alert('اختر منتج أولاً'); return }
+    if(!customerToken){ alert('يرجى تسجيل الدخول مرة أخرى'); setShowLogin(true); return }
     if(!orderFile){ alert('من فضلك ارفع ملف الطلب أولاً 📎'); return }
     if (!/\.(pdf|jpe?g|zip|rar|7z)$/i.test(orderFile.name)) { alert('الملفات المقبولة: PDF أو JPG أو JPEG أو ZIP أو RAR أو 7Z'); return }
     const total = cart.reduce((s,i)=>s+i.total,0);
@@ -489,7 +490,7 @@ export default function App() {
         <h2 style={{ margin: 0, cursor: 'pointer' }} onClick={() => setSelectedSub(null)}>المروة - REAL DB ✅</h2>
         <div style={{display:'flex', alignItems:'center'}}>
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
-          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); localStorage.removeItem('loggedClient'); setCart([])}}> خروج</span></>}
+          {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); setCustomerToken(''); sessionStorage.removeItem('elmarw_customer_token'); localStorage.removeItem('loggedClient'); setCart([])}}> خروج</span></>}
         </div>
       </div>
       {myUnread.length>0 && loggedClient &&!showMyOrders && <div style={{background:'#fef9c3', border:'2px solid #f59e0b', padding:'10px 15px', margin:'10px', borderRadius:'10px', display:'flex', justifyContent:'space-between'}}><span>🔔 عندك {myUnread.length} تحديث: {myUnread[0]?.msg}</span><button onClick={()=> setShowMyOrders(true)} style={{...btnStyle, background:'#f59e0b', color:'white', fontSize:'12px'}}>عرض</button></div>}
