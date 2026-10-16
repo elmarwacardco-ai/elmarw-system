@@ -1,0 +1,17 @@
+name: Meta webhook safety checks
+on:
+  pull_request:
+  push:
+    branches: [feature/meta-whatsapp-webhook-20261016]
+permissions:
+  contents: read
+jobs:
+  webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --prefix api --no-audit --no-fund
+      - run: node --test api/whatsapp-webhook.test.js
