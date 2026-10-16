@@ -303,7 +303,7 @@ export default async function handler(req, res) {
       if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول مرة أخرى'});
       const {data:auth,error:authError} = await db.auth.getUser(token);
       if (authError || !auth?.user) return res.status(401).json({error:'جلسة العميل انتهت'});
-      const {data:profile} = await db.from('customer_profiles').select('id,name,phone,type').eq('id',auth.user.id).maybeSingle();
+      const {data:profile} = await db.from('customer_profiles').select('id,name,phone,type,balance').eq('id',auth.user.id).maybeSingle();
       if (!profile) return res.status(403).json({error:'حساب العميل غير موجود'});
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const items = body?.items;
@@ -328,6 +328,8 @@ export default async function handler(req, res) {
         total += price;
         safeItems.push({productId:product.id,subCategoryId:product.subCategoryId,name:product.name,qty:Number(item.qty),price,total:price});
       }
+      const walletAmount=Number(body.walletAmount||0);
+      if(!Number.isFinite(walletAmount)||walletAmount<0||walletAmount!==Math.round(walletAmount*100)/100||walletAmount>total||walletAmount>Number(profile.balance||0)) return res.status(400).json({error:'مبلغ الخصم من الرصيد غير صحيح'});
       const serial = 'M-' + new Date().toISOString().slice(2,7).replace('-','') + '-' + crypto.randomUUID().slice(0,8).toUpperCase();
       const path = auth.user.id + '/' + crypto.randomUUID() + '-' + fileName.replace(/[^a-zA-Z0-9._-]/g,'_');
       const {error:uploadError} = await db.storage.from('customer-order-files').upload(path,bytes,{contentType:'application/octet-stream',upsert:false});
@@ -335,7 +337,15 @@ export default async function handler(req, res) {
       const details = {serialNumber:serial,clientId:profile.id,clientName:profile.name,clientPhone:profile.phone,items:safeItems,total,paidAmount:0,paymentStatus:'غير مدفوع',paymentMethod:['نقدي','فودافون كاش'].includes(body.paymentMethod)?body.paymentMethod:'نقدي',notes:String(body.notes||'').slice(0,2000),workerName:String(body.workerName||'').slice(0,120),status:'جديد',fileName,executionDate:new Date().toISOString().slice(0,10),readyDate:''};
       const {data:created,error:saveError} = await db.from('customer_orders').insert({customer_id:profile.id,serial_number:serial,details,file_path:path}).select('id,serial_number').single();
       if (saveError) {await db.storage.from('customer-order-files').remove([path]); return res.status(500).json({error:'تعذر حفظ الطلب'});}
-      return res.status(201).json({id:created.id,serialNumber:created.serial_number});
+      if(walletAmount>0){
+        const {error:debitError}=await db.rpc('marwa_wallet_apply_order',{p_customer:profile.id,p_order:created.id,p_amount:walletAmount});
+        if(debitError){
+          await db.from('customer_orders').delete().eq('id',created.id);
+          await db.storage.from('customer-order-files').remove([path]);
+          return res.status(409).json({error:'تعذر خصم الرصيد؛ راجع الرصيد وحاول مرة أخرى'});
+        }
+      }
+      return res.status(201).json({id:created.id,serialNumber:created.serial_number,walletPaid:walletAmount});
     }
     if (key === 'orders' && req.method === 'GET') {
       const db=getDatabase();
