@@ -19,7 +19,7 @@ export function temporarySignupAllowed() {
       process.env.VERCEL_ENV === 'production') return false;
   if (process.env.VERCEL_ENV !== 'preview') return true; // local test harness
   const testRef = String(process.env.ELMARWA_TEMP_SIGNUP_TEST_DB_REF || '');
-  if (!/^[a-z]{20}$/.test(testRef) || testRef === 'oosihqinkatldjmciutu') return false;
+  if (!/^[a-z0-9]{20}$/.test(testRef) || testRef === 'oosihqinkatldjmciutu') return false;
   try {
     const url = new URL(process.env.SUPABASE_URL || '');
     return url.protocol === 'https:' &&
