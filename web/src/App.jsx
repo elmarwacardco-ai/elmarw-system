@@ -16,6 +16,8 @@ async function apiRead(resource, token) {
 
 export default function App() {
   const [clients, setClients] = useState([])
+  const [showStickerSettings, setShowStickerSettings] = useState(false)
+  const [stickerSize, setStickerSize] = useState(() => { try { const v=JSON.parse(localStorage.getItem('elmarw_sticker_size')||'{}'); return {width:v.width||4,height:v.height||2} } catch {return {width:4,height:2}} })
   const [showPasswords, setShowPasswords] = useState({register:false,login:false,admin:false})
   const [customerToken, setCustomerToken] = useState(() => sessionStorage.getItem('elmarw_customer_token') || '')
   const [products, setProducts] = useState([])
@@ -165,22 +167,27 @@ export default function App() {
   const inputStyle = { display: 'block', width: '100%', margin: '10px 0', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '14px' }
 
   const printSticker = (o) => {
-    const w = window.open('', '_blank', 'width=400,height=250');
-    w.document.write(`
-      <html dir="rtl"><head><style>
-        @page { size: 4cm 2cm; margin: 0; }
-        body { width:4cm; height:2cm; margin:0; padding:2mm; font-family:Tahoma; border:1px dashed #000; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; }
-       .row { display:flex; justify-content:space-between; font-size:7pt; font-weight:900; }
-       .serial { font-size:10pt; text-align:center; font-weight:900; letter-spacing:1px; }
-       .small { font-size:6pt; color:#333; }
-      </style></head><body>
-        <div class="serial">#${o.serialNumber || o.id}</div>
-        <div class="row"><span>العميل:</span><span>${o.clientName}</span></div>
-        <div class="row small"><span>تنفيذ:</span><span>${o.executionDate || '-'}</span><span>جاهز:</span><span>${o.readyDate || '-'}</span></div>
-        <div class="row small"><span>${o.date||''}</span><span>${o.total||0}ج</span></div>
-        <script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500)}</script>
-      </body></html>
-    `);
+    const width=Number(stickerSize.width), height=Number(stickerSize.height);
+    if(!Number.isFinite(width)||!Number.isFinite(height)||width<2||height<1||width>15||height>10){alert('مقاس الاستيكر غير صحيح');return}
+    const escapeHtml = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const w=window.open('','_blank','width=480,height=360');
+    if(!w){alert('اسمح بفتح نافذة الطباعة من المتصفح');return}
+    const date=String(o.date||o.executionDate||'').split(',')[0];
+    w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>استيكر الطلب</title><style>
+      @page{size:${width}cm ${height}cm;margin:0}
+      *{box-sizing:border-box}html,body{margin:0;padding:0}
+      body{width:${width}cm;height:${height}cm;padding:1mm;font-family:Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
+      .sticker{height:100%;display:flex;flex-direction:column;justify-content:space-around;gap:.2mm}
+      .serial{font-weight:900;text-align:center;font-size:9pt;direction:ltr;border-bottom:1px solid #000}
+      .line{font-weight:800;font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .label{font-weight:400}
+      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+      </style></head><body><div class="sticker">
+      <div class="serial">${escapeHtml(o.serialNumber||o.id)}</div>
+      <div class="line"><span class="label">العميل: </span>${escapeHtml(o.clientName||'-')}</div>
+      <div class="line"><span class="label">اسم الشغل: </span>${escapeHtml(o.workerName||'-')}</div>
+      <div class="line"><span class="label">تاريخ الطلب: </span>${escapeHtml(date||'-')}</div>
+      </div><script>window.onload=()=>window.print()<\/script></body></html>`);
     w.document.close();
   }
 
@@ -392,7 +399,7 @@ export default function App() {
             <span style={{background:'#0f172a',color:'white',padding:'2px 7px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>🔢 {o.serialNumber||o.id}</span>
             <span style={{background:statusColor(o.status),color:'white',padding:'3px 9px',borderRadius:'10px',fontSize:'10px',fontWeight:900}}>{o.status||'جديد'}</span>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'8px'}}><span style={{fontSize:'11px',color:'#475569'}}>📅 {o.date}</span><b style={{fontSize:'13px',color:'#16a34a'}}>{total}ج</b><button onClick={()=>printSticker(o)} style={{...btnStyle,background:'#111827',color:'white',padding:'4px 8px',fontSize:'10px',margin:0}}>🖨️ 4×2</button></div>
+          <div style={{display:'flex',alignItems:'center',gap:'8px'}}><span style={{fontSize:'11px',color:'#475569'}}>📅 {o.date}</span><b style={{fontSize:'13px',color:'#16a34a'}}>{total}ج</b><button onClick={()=>printSticker(o)} style={{...btnStyle,background:'#111827',color:'white',padding:'4px 8px',fontSize:'10px',margin:0}}>🖨️ استيكر</button></div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'minmax(200px,1.7fr) repeat(3,minmax(110px,.7fr))',gap:'7px',padding:'8px 10px'}}>
           <div style={{background:'#f8fafc',border:'1px solid #eef2f7',borderRadius:'8px',padding:'7px'}}>
@@ -603,7 +610,7 @@ export default function App() {
               return (
                 <div key={o.id} style={{background:'white', borderRadius:'12px', marginBottom:'14px', border:'1px solid #e2e8f0', overflow:'hidden'}}>
                   <div style={{height:'5px', background: statusColor(o.status)}}></div>
-                  <div style={{background:'#000', color:'white', padding:'4px 10px', fontSize:'11px', fontWeight:900, display:'flex', justifyContent:'space-between'}}><span>سيريال: {o.serialNumber||o.id}</span><button onClick={()=> printSticker(o)} style={{background:'white', color:'black', border:'none', padding:'2px 8px', borderRadius:'10px', fontSize:'9px', fontWeight:'bold', cursor:'pointer'}}>🖨️ استيكر 4x2</button></div>
+                  <div style={{background:'#000', color:'white', padding:'4px 10px', fontSize:'11px', fontWeight:900, display:'flex', justifyContent:'space-between'}}><span>سيريال: {o.serialNumber||o.id}</span><button onClick={()=> printSticker(o)} style={{background:'white', color:'black', border:'none', padding:'2px 8px', borderRadius:'10px', fontSize:'9px', fontWeight:'bold', cursor:'pointer'}}>🖨️ استيكر</button></div>
                   <div className="customer-order-layout" style={{display:'flex',flexDirection:'row-reverse',minWidth:0}}>
                     <div className="payment-proof-panel" style={{width:'170px',flexShrink:0, background:'#f8fafc', borderLeft:'1px solid #e2e8f0', padding:'12px', textAlign:'center'}}>
                       <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProofPath && <button type="button" style={{marginTop:'6px',padding:'6px 10px',borderRadius:'8px',background:'#e0f2fe',color:'#075985',border:0,cursor:'pointer'}} onClick={async()=>{try{const token=sessionStorage.getItem('elmarw_customer_token');const response=await fetch(`${API}/orders/${o.id}/payment-proof`,{headers:{Authorization:`Bearer ${token}`}});const result=await response.json().catch(()=>({}));if(!response.ok||!result.url)throw new Error(result.error||'تعذر فتح الصورة');window.open(result.url,'_blank','noopener,noreferrer');}catch(error){alert(error.message)}}}>👁️ عرض الاسكرين</button>}{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/*" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; e.target.value=''; if(!file) return; if(!['image/jpeg','image/png','image/webp'].includes(file.type)){alert('اختار صورة JPG أو PNG أو WEBP');return;} if(file.size>3*1024*1024){alert('الصورة لازم أقل من 3 ميجابايت');return;} try { const token=sessionStorage.getItem('elmarw_customer_token'); if(!token) throw new Error('يرجى تسجيل الدخول مرة أخرى'); const fileData=await readFileAsDataUrl(file); const response=await fetch(`${API}/orders/${o.id}/payment-proof`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({fileName:file.name,mime:file.type,fileData})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'فشل رفع الصورة');setOrders(prev=>prev.map(item=>String(item.id)===String(o.id)?{...item,...result}:item));alert('تم رفع سكرين التحويل وحفظه بنجاح ✅');}catch(error){alert('فشل رفع الصورة: '+error.message)} }}/></label></div>
@@ -628,6 +635,20 @@ export default function App() {
         </div>
       </div>}
 
+      <div style={{position:'fixed',bottom:14,left:14,zIndex:110}}>
+        <button type="button" onClick={()=>setShowStickerSettings(true)} style={{...btnStyle,background:'#1e3a8a',color:'white',fontSize:12,padding:'9px 12px',boxShadow:'0 3px 12px #0003'}}>⚙️ إعدادات الاستيكر</button>
+      </div>
+      {showStickerSettings && <div style={{position:'fixed',inset:0,background:'#0009',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center',padding:12}}>
+        <div style={{background:'white',borderRadius:14,padding:20,width:'100%',maxWidth:360,direction:'rtl'}}>
+          <h3 style={{marginTop:0}}>⚙️ إعدادات طباعة الاستيكر</h3>
+          <p style={{fontSize:12,color:'#475569'}}>المقاس بالسنتيمتر. الافتراضي 4 × 2 سم.</p>
+          <label>العرض (سم)<input type="number" min="2" max="15" step=".1" value={stickerSize.width} onChange={e=>setStickerSize(v=>({...v,width:e.target.value}))} style={inputStyle}/></label>
+          <label>الارتفاع (سم)<input type="number" min="1" max="10" step=".1" value={stickerSize.height} onChange={e=>setStickerSize(v=>({...v,height:e.target.value}))} style={inputStyle}/></label>
+          <p style={{fontSize:12}}>البيانات: السيريال – اسم العميل – اسم الشغل – تاريخ الطلب</p>
+          <button onClick={()=>{const w=Number(stickerSize.width),h=Number(stickerSize.height);if(w<2||w>15||h<1||h>10||!Number.isFinite(w)||!Number.isFinite(h)){alert('العرض من 2 إلى 15 سم والارتفاع من 1 إلى 10 سم');return}localStorage.setItem('elmarw_sticker_size',JSON.stringify({width:w,height:h}));setShowStickerSettings(false)}} style={{...btnStyle,background:'#16a34a',color:'white'}}>حفظ الإعدادات</button>
+          <button onClick={()=>setShowStickerSettings(false)} style={btnStyle}>إغلاق</button>
+        </div>
+      </div>}
       {showCart && cart.length>0 && <div style={{ position: 'fixed', inset:0, background: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding:'12px' }}><div style={{ background: 'white', padding: '18px', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 50px rgba(0,0,0,.3)' }}><h3 style={{marginTop:0,color:'#1e3a8a'}}>🛒 إرسال الطلب</h3>{cart.map(item => (<div key={item.id} style={{display: 'flex', alignItems:'center', gap:'8px', padding:'9px 0', borderBottom:'1px solid #eee'}}><div style={{width:'45px', height:'45px', borderRadius:'8px', overflow:'hidden', background:'#f1f5f9'}}>{item.image? <img src={item.image} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : null}</div><span style={{flex:1,fontWeight:800,fontSize:'12px'}}>{item.name} - {item.qty}</span><span style={{fontWeight:900}}>{item.total}ج <button onClick={() => setCart(cart.filter(c => c.id!== item.id))} style={{color: 'red', border: 'none', background: 'none', cursor:'pointer'}}>✕</button></span></div>))}<div style={{fontWeight:900,fontSize:'16px',padding:'10px 0'}}>الإجمالي: {cart.reduce((s,i)=>s+i.total,0)}ج</div><div style={{background:'#eff6ff',padding:'10px',borderRadius:'10px',marginBottom:'8px',color:'#1e40af',fontWeight:800}}>العميل: {loggedClient?.name}</div><input placeholder="اسم الشغال (اختياري)" value={orderClientName} onChange={e => setOrderClientName(e.target.value)} style={inputStyle} /><select value={customerPaymentMethod} onChange={e=>setCustomerPaymentMethod(e.target.value)} style={inputStyle}><option value="نقدي">💵 نقدي</option><option value="فودافون كاش">📱 فودافون كاش</option></select><label style={{display:'block',background:'#f8fafc',border:'2px dashed #2563eb',padding:'12px',borderRadius:'10px',fontWeight:900,color:'#1e40af',cursor:'pointer',textAlign:'center'}}>📎 رفع ملف الطلب {orderFile? `✅ ${orderFile.name}`:'(إجباري)'}<input type="file" accept=".pdf,.jpg,.jpeg,.zip,.rar,.7z,application/pdf,image/jpeg,application/zip,application/x-rar-compressed,application/x-7z-compressed" onChange={e => setOrderFile(e.target.files[0])} style={{display:'none'}} /></label><textarea placeholder="ملاحظات الطباعة (اختياري)" value={orderNotes} onChange={e=> setOrderNotes(e.target.value)} style={inputStyle}></textarea><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%',margin:'5px 0'}} onClick={handlePlaceOrder}>إرسال الطلب الآن ✅</button><button style={{...btnStyle, background: '#64748b', color: 'white', width: '100%',margin:'5px 0'}} onClick={() => setShowCart(false)}>إلغاء</button></div></div>}
       {showForm && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px' }}><h3>تسجيل جديد</h3><input placeholder="الاسم" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} /><input placeholder="الموبايل 11 رقم" value={form.phone} maxLength={11} onChange={e => {const v=e.target.value.replace(/[^0-9]/g,''); if(v.length<=11) setForm({...form, phone: v})}} style={inputStyle} /><input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company: e.target.value})} style={inputStyle} /><input placeholder="العنوان" value={form.address} onChange={e => setForm({...form, address: e.target.value})} style={inputStyle} /><input placeholder="الباسورد" type={showPasswords.register ? 'text' : 'password'} value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} style={inputStyle} /><button type="button" onClick={() => setShowPasswords(prev=>({...prev,register:!prev.register}))} style={{...btnStyle,background:'#e2e8f0',color:'#0f172a',margin:'4px 0 12px',padding:'8px 12px'}}>{showPasswords.register ? '🙈 إخفاء كلمة المرور' : '👁️ إظهار كلمة المرور'}</button><button style={{...btnStyle, background: '#16a34a', color: 'white', width: '100%'}} onClick={handleRegister}>تسجيل</button><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%'}} onClick={() => setShowForm(false)}>اغلاق</button></div></div>}
       {showLogin && <div style={{ position: 'fixed', inset:0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}><div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '400px', position:'relative' }}><h3 style={{textAlign:'center'}}>دخول العملاء</h3><input placeholder="موبايل" value={login.phone} onChange={e=> setLogin({...login, phone: e.target.value})} style={inputStyle} /><input placeholder="باسورد" type={showPasswords.login ? 'text' : 'password'} value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} style={inputStyle} /><button type="button" onClick={() => setShowPasswords(prev=>({...prev,login:!prev.login}))} style={{...btnStyle,background:'#e2e8f0',color:'#0f172a',margin:'4px 0 12px',padding:'8px 12px'}}>{showPasswords.login ? '🙈 إخفاء كلمة المرور' : '👁️ إظهار كلمة المرور'}</button><button style={{...btnStyle, background: '#2563eb', color: 'white', width: '100%'}} onClick={handleLogin}>دخول</button><div style={{textAlign:'center', marginTop:'10px'}}><span onClick={()=> alert('برجاء التواصل مع خدمة العملاء\n📞 01000000000')} style={{color:'#2563eb', cursor:'pointer', fontSize:'13px', textDecoration:'underline'}}>نسيت الباسورد؟ برجاء التواصل مع خدمة العملاء</span></div><button style={{...btnStyle, background: '#6b7280', color: 'white', width: '100%', marginTop:'10px'}} onClick={() => setShowLogin(false)}>اغلاق</button><div onClick={()=> {setShowAdminLogin(true); setShowLogin(false)}} style={{position:'absolute', bottom:'8px', left:'8px', width:'22px', height:'22px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px'}}>🔒</div></div></div>}
