@@ -11,6 +11,23 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const toE164 = phone => '+20' + phone.slice(1);
 // Internal-only login alias; never sent to a customer or used as proof of email/phone ownership.
 const temporaryEmail = phone => 'elmarwa-temporary-' + phone + '@example.com';
+// A Preview must be pinned to an explicitly isolated Supabase test project.
+// Vercel Preview normally inherits the same database as production, so a
+// feature flag alone must never make unverified phone enrollment writable.
+function temporarySignupAllowed() {
+  if (process.env.ENABLE_TEMP_PHONE_SIGNUP !== 'true' ||
+      process.env.VERCEL_ENV === 'production') return false;
+  if (process.env.VERCEL_ENV !== 'preview') return true; // local test harness
+  const testRef = String(process.env.ELMARWA_TEMP_SIGNUP_TEST_DB_REF || '');
+  if (!/^[a-z]{20}$/.test(testRef) || testRef === 'oosihqinkatldjmciutu') return false;
+  try {
+    const url = new URL(process.env.SUPABASE_URL || '');
+    return url.protocol === 'https:' &&
+      url.hostname === testRef + '.supabase.co' &&
+      !url.username && !url.password;
+  } catch { return false; }
+}
+
 const normalizedEgyptPhone = value => {
   const raw = String(value || '').trim().replace(/[\s()-]/g, '');
   if (PHONE.test(raw)) return raw;
@@ -63,7 +80,7 @@ async function mutate(db, resource, method, id, payload) {
 async function login(db, phone, password, auth = publicAuthClient()) {
   const snapshot = await readData(db);
   const registered = (snapshot.clients || []).find(c => c.phone === phone);
-  if (process.env.ENABLE_TEMP_PHONE_SIGNUP === 'true' && registered?.provisionalSignup === true && registered.phoneVerified !== true) {
+  if (temporarySignupAllowed() && registered?.provisionalSignup === true && registered.phoneVerified !== true) {
     const { data, error } = await auth.auth.signInWithPassword({
       email: temporaryEmail(phone), password
     });
@@ -123,7 +140,7 @@ async function identity(db, req) {
       c.phone === ('0' + String(data.user.phone || '').replace(/^\+20/, ''))) ||
     (c.emailVerified === true && data.user.email_confirmed_at && data.user.email &&
       String(c.email||'').toLowerCase()===data.user.email.toLowerCase()) ||
-    (process.env.ENABLE_TEMP_PHONE_SIGNUP === 'true' && c.provisionalSignup === true && c.phoneVerified !== true &&
+    (temporarySignupAllowed() && c.provisionalSignup === true && c.phoneVerified !== true &&
       data.user.app_metadata?.elmarwa_temp_customer === true &&
       String(data.user.email||'').toLowerCase() === temporaryEmail(c.phone))
   ));
@@ -199,8 +216,8 @@ export async function handleCustomerRequest(req, res, db, authFactory = publicAu
       // DEVELOPMENT PREVIEW ONLY. This is NOT proof of phone ownership.
       // The disabled-by-default flag must never be enabled as a substitute
       // for OTP on a production service containing genuine customer data.
-      if (process.env.ENABLE_TEMP_PHONE_SIGNUP !== 'true') {
-        return respond(res, 503, 'التسجيل التجريبي برقم الهاتف غير مفعل');
+      if (!temporarySignupAllowed()) {
+        return respond(res, 503, 'التسجيل التجريبي برقم الهاتف غير متاح على قاعدة البيانات الحالية');
       }
       const body = parse(req);
       const phone = String(body.phone || '').trim();
