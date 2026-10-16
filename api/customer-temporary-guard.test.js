@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { temporarySignupAllowed } from './customer.js';
 
 function withEnvironment(values, fn) {
-  const keys=['ENABLE_TEMP_PHONE_SIGNUP','VERCEL_ENV','SUPABASE_URL','ELMARWA_TEMP_SIGNUP_TEST_DB_REF'];
+  const keys=['ENABLE_TEMP_PHONE_SIGNUP','VERCEL_ENV','SUPABASE_URL','ELMARWA_TEMP_SIGNUP_TEST_DB_REF','ELMARWA_TEST_DATA_ACK'];
   const previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
   try {
     for(const k of keys) {
@@ -27,6 +27,21 @@ test('live Supabase project is blocked in Preview even with both flags',()=>{
     SUPABASE_URL:'https://oosihqinkatldjmciutu.supabase.co',
     ELMARWA_TEMP_SIGNUP_TEST_DB_REF:'oosihqinkatldjmciutu'
   },()=>assert.equal(temporarySignupAllowed(),false));
+});
+test('owner-approved trial database can support Preview registration but not without explicit acknowledgement',()=>{
+  const config={
+    ENABLE_TEMP_PHONE_SIGNUP:'true',
+    VERCEL_ENV:'preview',
+    SUPABASE_URL:'https://oosihqinkatldjmciutu.supabase.co',
+    ELMARWA_TEMP_SIGNUP_TEST_DB_REF:'oosihqinkatldjmciutu'
+  };
+  withEnvironment(config,()=>assert.equal(temporarySignupAllowed(),false));
+  withEnvironment({...config,ELMARWA_TEST_DATA_ACK:'true'},
+    ()=>assert.equal(temporarySignupAllowed(),true));
+  withEnvironment({...config,ELMARWA_TEST_DATA_ACK:'false'},
+    ()=>assert.equal(temporarySignupAllowed(),false));
+  withEnvironment({...config,ELMARWA_TEST_DATA_ACK:'true',VERCEL_ENV:'production'},
+    ()=>assert.equal(temporarySignupAllowed(),false));
 });
 test('Preview requires an exact, explicitly isolated Supabase reference',()=>{
   const settings={ENABLE_TEMP_PHONE_SIGNUP:'true',VERCEL_ENV:'preview',
