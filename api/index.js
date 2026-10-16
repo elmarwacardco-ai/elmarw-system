@@ -94,6 +94,15 @@ export default async function handler(req, res) {
       if (profileError || !profile) return res.status(404).json({error:'Customer not found'});
       return res.status(200).json(profile);
     }
+    // Public storefront catalog; never expose customer, employee or order records.
+    if (req.method === 'GET' && ['categories','subCategories','products'].includes(key)) {
+      const db = getDatabase();
+      const {data:record,error:readError} = await db.from('app_data').select('data').eq('id',1).maybeSingle();
+      if (readError) return res.status(500).json({error:'Catalog unavailable'});
+      const items = record?.data?.[key] ?? [];
+      if (!Array.isArray(items)) return res.status(500).json({error:'Invalid catalog'});
+      return res.status(200).json(items);
+    }
     // السماح بإضافة التصنيفات الرئيسية فقط
     if (req.method === 'POST' && key !== 'categories') {
       return res.status(405).json({
