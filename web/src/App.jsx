@@ -63,7 +63,7 @@ export default function App() {
   const [deletePass, setDeletePass] = useState('')
   const quantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000]
   const orderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم','ملغي']
-  const folderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم']
+  const folderStatuses = ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم']
   const paymentMethods = ['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل']
 
   const [loadError, setLoadError] = useState('')
@@ -341,7 +341,8 @@ export default function App() {
   }
   const handleDeleteFolder = async (folder) => {
     if(!sessionStorage.getItem(TOKEN_KEY)){alert('يرجى تسجيل دخول المدير');return}
-    try {await folderRequest('/'+folder.id,'DELETE');setShowDeleteConfirm(null);setDeletePass('')}
+    if(!window.confirm(`حذف فولدر «${folder.name}»؟ الأوردرات نفسها لن تُحذف، لكنها ستصبح بدون فولدر.`))return
+    try {await folderRequest('/'+folder.id,'DELETE');setShowDeleteConfirm(null);setDeletePass('');setSelectedFolderId(null);alert('تم حذف الفولدر فقط، والأوردرات محفوظة')}
     catch(e){alert('فشل حذف الفولدر: '+e.message)}
   }
 
@@ -493,13 +494,13 @@ export default function App() {
           {adminTab==='operation' && <div>
             {!selectedFolder ? <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}><h2>⚙️ قسم التشغيل - الفولدرات</h2><button onClick={()=>setShowAdmin(false)} style={{...btnStyle,background:'#0f172a',color:'white'}}>🌐 الرئيسية</button></div>
               <div style={{background:'white',padding:'12px',borderRadius:'12px',marginTop:'10px',display:'flex',gap:'8px'}}><input placeholder="اسم الفولدر الجديد" value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} style={{...inputStyle,margin:0,flex:1}}/><button onClick={handleCreateFolder} style={{...btnStyle,background:'#16a34a',color:'white',margin:0}}>+ إنشاء فولدر</button></div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:'12px',marginTop:'14px'}}>
-                {folders.map(folder=>{ const count=orders.filter(o=>(folder.orderIds||[]).map(String).includes(String(o.id))).length; return <div key={folder.id} onClick={()=>setSelectedFolderId(folder.id)} style={{background:'white',padding:'16px',borderRadius:'14px',borderRight:`7px solid ${statusColor(folder.status)}`,boxShadow:'0 3px 10px rgba(15,23,42,.06)',cursor:'pointer'}}>
+              <div style={{marginTop:'14px'}}>
+                {folderStatuses.map(stage=><section key={stage} style={{marginBottom:'18px'}}><h3 style={{fontSize:'15px',padding:'10px 12px',background:'#e2e8f0',borderRadius:'10px',margin:'0 0 10px'}}>📂 {stage} ({folders.filter(f=>f.status===stage).length})</h3><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:'12px'}}>{folders.filter(f=>f.status===stage).map(folder=>{ const count=orders.filter(o=>(folder.orderIds||[]).map(String).includes(String(o.id))).length; return <div key={folder.id} onClick={()=>setSelectedFolderId(folder.id)} style={{background:'white',padding:'16px',borderRadius:'14px',borderRight:`7px solid ${statusColor(folder.status)}`,boxShadow:'0 3px 10px rgba(15,23,42,.06)',cursor:'pointer'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b style={{fontSize:'17px'}}>📁 {folder.name}</b><span style={{background:'#dbeafe',color:'#1e40af',padding:'4px 8px',borderRadius:'12px',fontSize:'11px'}}>{count} اوردر</span></div>
                   <div style={{fontSize:'11px',color:'#64748b',marginTop:'8px'}}>📅 {folder.date}</div><div style={{marginTop:'8px',fontSize:'12px',fontWeight:'bold',color:statusColor(folder.status)}}>الحالة: {folder.status}</div>
-                  <div style={{display:'flex',gap:'5px',marginTop:'10px'}}><button onClick={e=>{e.stopPropagation();setEditFolderId(folder.id);setEditFolderName(folder.name)}} style={{...btnStyle,background:'#f59e0b',color:'white',fontSize:'10px',margin:0}}>✏️ تعديل</button><button onClick={e=>{e.stopPropagation();setShowDeleteConfirm(folder.id)}} style={{...btnStyle,background:'#ef4444',color:'white',fontSize:'10px',margin:0}}>🗑️ مسح</button></div>
-                  {editFolderId===folder.id && <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:'5px',marginTop:'8px'}}><input value={editFolderName} onChange={e=>setEditFolderName(e.target.value)} style={{...inputStyle,margin:0,padding:'6px'}}/><button onClick={async()=>{await fetch(`${API}/folders/${folder.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:editFolderName})});setEditFolderId(null);loadAll()}} style={{...btnStyle,background:'#16a34a',color:'white',margin:0}}>حفظ</button></div>}
-                </div>})}
+                  <div style={{display:'flex',gap:'5px',marginTop:'10px'}}><button onClick={e=>{e.stopPropagation();setEditFolderId(folder.id);setEditFolderName(folder.name)}} style={{...btnStyle,background:'#f59e0b',color:'white',fontSize:'10px',margin:0}}>✏️ تعديل</button><button onClick={e=>{e.stopPropagation();handleDeleteFolder(folder)}} style={{...btnStyle,background:'#ef4444',color:'white',fontSize:'10px',margin:0}}>🗑️ مسح</button></div>
+                  {editFolderId===folder.id && <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:'5px',marginTop:'8px'}}><input value={editFolderName} onChange={e=>setEditFolderName(e.target.value)} style={{...inputStyle,margin:0,padding:'6px'}}/><button onClick={async()=>{try{await folderRequest('/'+folder.id,'PUT',{name:editFolderName});setEditFolderId(null)}catch(e){alert('فشل تعديل اسم الفولدر: '+e.message)}}} style={{...btnStyle,background:'#16a34a',color:'white',margin:0}}>حفظ</button></div>}
+                </div>})}</div></section>)}
               </div>
               {folders.length===0 && <div style={{background:'white',padding:'30px',textAlign:'center',borderRadius:'12px',marginTop:'15px'}}>لا يوجد فولدرات - أنشئ أول فولدر</div>}
               {operationOrders.length>0 && <div style={{background:'white',padding:'14px',borderRadius:'12px',marginTop:'18px'}}><h3>📦 اوردرات بدون فولدر ({operationOrders.length})</h3>{operationOrders.map(o=><div key={o.id} style={{display:'flex',justifyContent:'space-between',gap:'8px',padding:'8px',borderBottom:'1px solid #eee',fontSize:'12px'}}><span>#{o.serialNumber||o.id} - {o.clientName} - {o.total}ج</span><select onChange={e=>{if(e.target.value)handleAddOrderToFolder(e.target.value,o.id)}}><option value="">+ أضف لفولدر</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>)}</div>}
