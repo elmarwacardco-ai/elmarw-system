@@ -103,6 +103,58 @@ export default async function handler(req, res) {
       if (!Array.isArray(items)) return res.status(500).json({error:'Invalid catalog'});
       return res.status(200).json(items);
     }
+    if (key === 'orders' && req.method === 'POST') {
+      const db = getDatabase();
+      const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل الدخول مرة أخرى'});
+      const {data:auth,error:authError} = await db.auth.getUser(token);
+      if (authError || !auth?.user) return res.status(401).json({error:'جلسة العميل انتهت'});
+      const {data:profile} = await db.from('customer_profiles').select('id,name,phone,type').eq('id',auth.user.id).maybeSingle();
+      if (!profile) return res.status(403).json({error:'حساب العميل غير موجود'});
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const items = body?.items;
+      if (!Array.isArray(items) || !items.length || items.length > 30 || !items.every(x => Number.isInteger(Number(x.qty)) && Number(x.qty)>0 && x.productId != null)) return res.status(400).json({error:'بيانات المنتجات غير صحيحة'});
+      const fileName = String(body.fileName||'').slice(0,180);
+      const fileData = String(body.fileData||'');
+      if (!/\.(pdf|jpe?g|zip|rar|7z)$/i.test(fileName) || !/^data:[^;]{1,100};base64,[A-Za-z0-9+/=]+$/.test(fileData)) return res.status(400).json({error:'ملف الطلب غير صالح'});
+      const bytes = Buffer.from(fileData.slice(fileData.indexOf(',')+1),'base64');
+      if (!bytes.length || bytes.length > 3*1024*1024) return res.status(413).json({error:'الحد المؤقت لحجم الملف 3 ميجابايت'});
+      const {data:catalog,error:catalogError} = await db.from('app_data').select('data').eq('id',1).maybeSingle();
+      if (catalogError) return res.status(500).json({error:'تعذر التحقق من الأسعار'});
+      const products = catalog?.data?.products || [];
+      let total = 0;
+      const safeItems = [];
+      for (const item of items) {
+        const product = products.find(p=>String(p.id)===String(item.productId));
+        if (!product) return res.status(400).json({error:'منتج غير موجود'});
+        let prices = profile.type==='VIP' ? product.pricesVIP : product.pricesB;
+        if (typeof prices==='string') {try{prices=JSON.parse(prices)}catch{return res.status(400).json({error:'سعر المنتج غير صالح'})}}
+        const price = Number(prices?.[String(item.qty)]);
+        if (!Number.isFinite(price) || price < 0 || prices?.[String(item.qty)] == null || prices?.[String(item.qty)] === '') return res.status(400).json({error:'سعر أو كمية غير صالحة'});
+        total += price;
+        safeItems.push({productId:product.id,subCategoryId:product.subCategoryId,name:product.name,qty:Number(item.qty),price,total:price});
+      }
+      const serial = 'M-' + new Date().toISOString().slice(2,7).replace('-','') + '-' + crypto.randomUUID().slice(0,8).toUpperCase();
+      const path = auth.user.id + '/' + crypto.randomUUID() + '-' + fileName.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const {error:uploadError} = await db.storage.from('customer-order-files').upload(path,bytes,{contentType:'application/octet-stream',upsert:false});
+      if (uploadError) return res.status(500).json({error:'تعذر رفع ملف الطلب'});
+      const details = {serialNumber:serial,clientId:profile.id,clientName:profile.name,clientPhone:profile.phone,items:safeItems,total,paidAmount:0,paymentStatus:'غير مدفوع',paymentMethod:['نقدي','فودافون كاش'].includes(body.paymentMethod)?body.paymentMethod:'نقدي',notes:String(body.notes||'').slice(0,2000),workerName:String(body.workerName||'').slice(0,120),status:'جديد',fileName,executionDate:new Date().toISOString().slice(0,10),readyDate:''};
+      const {data:created,error:saveError} = await db.from('customer_orders').insert({customer_id:profile.id,serial_number:serial,details,file_path:path}).select('id').single();
+      if (saveError) {await db.storage.from('customer-order-files').remove([path]); return res.status(500).json({error:'تعذر حفظ الطلب'});}
+      return res.status(201).json({id:created.id,serialNumber:serial});
+    }
+    if (key === 'orders' && req.method === 'GET') {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'Login required'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'Invalid session'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      const query=db.from('customer_orders').select('id,details,created_at').order('created_at',{ascending:false});
+      const {data:rows,error:readError}=await (admin?query:query.eq('customer_id',auth.user.id));
+      if (readError) return res.status(500).json({error:'تعذر تحميل الطلبات'});
+      return res.status(200).json((rows||[]).map(r=>({...r.details,id:r.id,date:r.created_at})));
+    }
     // السماح بإضافة التصنيفات الرئيسية فقط
     if (req.method === 'POST' && key !== 'categories') {
       return res.status(405).json({
