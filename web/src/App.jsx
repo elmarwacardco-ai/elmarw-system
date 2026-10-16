@@ -485,10 +485,34 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: 'Tahoma', direction: 'rtl' }}>
-      <div style={{ background: '#1e3a8a', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
+    <div className="elmarwa-storefront" style={{ fontFamily: 'Tahoma', direction: 'rtl', minHeight:'100vh' }}>
+      <style>{`
+        .elmarwa-storefront, .elmarwa-storefront * { box-sizing: border-box; }
+        .elmarwa-storefront { width:100%; max-width:100%; overflow-x:clip; }
+        .elmarwa-storefront img { max-width:100%; }
+        .elmarwa-storefront input, .elmarwa-storefront select, .elmarwa-storefront textarea { max-width:100%; min-width:0; }
+        .elmarwa-storefront table { max-width:100%; }
+        .elmarwa-storefront .customer-header { gap:12px; flex-wrap:wrap; align-items:center; }
+        .elmarwa-storefront .customer-header-actions { gap:6px; flex-wrap:wrap; }
+        .elmarwa-storefront .customer-header-actions button { white-space:normal; }
+        @media (max-width: 700px) {
+          .elmarwa-storefront .customer-header { padding:12px !important; justify-content:center !important; text-align:center; }
+          .elmarwa-storefront .customer-header h2 { width:100%; font-size:clamp(19px,5vw,25px); }
+          .elmarwa-storefront .customer-header-actions { justify-content:center; width:100%; }
+          .elmarwa-storefront .customer-header-actions button { padding:10px 12px !important; margin:3px !important; font-size:13px !important; }
+          .elmarwa-storefront [style*="position: fixed"] > div { max-width:calc(100vw - 24px) !important; }
+          .elmarwa-storefront [style*="position: fixed"] { max-width:100vw; }
+          .elmarwa-storefront .admin-menu { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .elmarwa-storefront .admin-sidebar { max-height:45vh; }
+        }
+        @media (max-width: 420px) {
+          .elmarwa-storefront .customer-header-actions button { font-size:12px !important; padding:9px !important; }
+          .elmarwa-storefront .admin-menu { grid-template-columns:1fr 1fr !important; }
+        }
+      `}</style>
+      <div className="customer-header" style={{ background: '#1e3a8a', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
         <h2 style={{ margin: 0, cursor: 'pointer' }} onClick={() => setSelectedSub(null)}>المروة - REAL DB ✅</h2>
-        <div style={{display:'flex', alignItems:'center'}}>
+        <div className="customer-header-actions" style={{display:'flex', alignItems:'center'}}>
           <button style={{...btnStyle, background: cart.length?'#f59e0b':'#94a3b8', color: 'white'}} onClick={() => { if(!loggedClient){ setShowLogin(true); return } if(cart.length) setShowCart(true); else alert('السلة فارغة — اختر منتجاً أولاً') }}>🛒 السلة ({cart.length})</button>
           {!loggedClient? (<><button style={{...btnStyle, background: '#16a34a', color: 'white'}} onClick={() => setShowForm(true)}>تسجيل</button><button style={{...btnStyle, background: 'white', color: '#1e3a8a'}} onClick={() => setShowLogin(true)}>دخول</button></>) : <><span style={{fontSize:'13px', marginLeft:'10px'}}>{loggedClient.name}</span><button style={{...btnStyle, background: myUnread.length>0?'#ef4444':'#f59e0b', color:'white'}} onClick={()=> { setShowMyOrders(true); setNotifications(notifications.map(n=> (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,''))? {...n, read:true}: n))}}>📦 طلباتي ({myOrdersList.length}) {myUnread.length>0? `(${myUnread.length}🔔)`:''}</button><span style={{cursor: 'pointer', marginRight:10, fontSize:'12px'}} onClick={() => {setLoggedClient(null); setCustomerToken(''); sessionStorage.removeItem('elmarw_customer_token'); localStorage.removeItem('loggedClient'); setCart([])}}> خروج</span></>}
         </div>
