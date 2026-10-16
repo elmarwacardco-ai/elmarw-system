@@ -151,6 +151,13 @@ export default async function handler(req, res) {
           if (changes.orderIds) next=next.map(f=>String(f.id)===String(id)?f:{...f,orderIds:(f.orderIds||[]).filter(oid=>!changes.orderIds.includes(String(oid)))});
         }
       }
+      if (req.method==='PUT' && body?.status==='تم التسليم') {
+        for(const orderId of result.orderIds||[]){
+          const {data:order,error:orderError}=await db.from('customer_orders').select('details').eq('id',orderId).maybeSingle();
+          if(orderError||!order) return res.status(400).json({error:'تعذر التحقق من حساب أحد الأوردرات'});
+          if(Number(order.details.paidAmount||0)<Number(order.details.total||0)) return res.status(400).json({error:'لا يمكن تسليم الفولدر: يوجد أوردر لم يسدد بالكامل'});
+        }
+      }
       // Assigning a new order to a folder advances it into execution.
       if (req.method==='PUT' && body?.orderIds!==undefined) {
         const previousIds=new Set((folders.find(f=>String(f.id)===String(id))?.orderIds||[]).map(String));
