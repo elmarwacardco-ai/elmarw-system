@@ -151,6 +151,19 @@ export default async function handler(req, res) {
           if (changes.orderIds) next=next.map(f=>String(f.id)===String(id)?f:{...f,orderIds:(f.orderIds||[]).filter(oid=>!changes.orderIds.includes(String(oid)))});
         }
       }
+      // Assigning a new order to a folder advances it into execution.
+      if (req.method==='PUT' && body?.orderIds!==undefined) {
+        const previousIds=new Set((folders.find(f=>String(f.id)===String(id))?.orderIds||[]).map(String));
+        for (const orderId of result.orderIds||[]) {
+          if (previousIds.has(String(orderId))) continue;
+          const {data:order,error:orderError}=await db.from('customer_orders').select('details').eq('id',orderId).maybeSingle();
+          if (orderError||!order) return res.status(500).json({error:'تعذر قراءة الأوردر قبل إضافته للفولدر'});
+          if (order.details?.status==='جديد') {
+            const {error:statusError}=await db.from('customer_orders').update({details:{...order.details,status:'قيد التنفيذ'}}).eq('id',orderId);
+            if (statusError) return res.status(500).json({error:'تعذر نقل الأوردر إلى قيد التنفيذ'});
+          }
+        }
+      }
       const {error:writeError}=await db.from('app_data').update({data:{...all,folders:next}}).eq('id',1);
       if (writeError) return res.status(500).json({error:'فشل حفظ الفولدر'});
       if (req.method==='PUT'&&body?.status!==undefined) {
