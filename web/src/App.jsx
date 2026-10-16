@@ -195,12 +195,12 @@ export default function App() {
   const readFileAsDataUrl = (file) => new Promise((resolve, reject) => { if(!file) return resolve(''); const r = new FileReader(); r.onload = () => resolve(r.result || ''); r.onerror = reject; r.readAsDataURL(file) })
   const downloadOrderFile = async (o) => {
     try {
-      const token=sessionStorage.getItem(TOKEN_KEY) || customerToken;
+      const token=showAdmin ? sessionStorage.getItem(TOKEN_KEY) : customerToken;
       if(!token) throw new Error('يرجى تسجيل الدخول مرة أخرى');
       const response=await fetch(`${API}/orders/${o.id}/file`,{headers:{Authorization:`Bearer ${token}`}});
       const data=await response.json().catch(()=>({}));
       if(!response.ok||!data.url) throw new Error(data.error||'تعذر تحميل الملف');
-      const a=document.createElement('a'); a.href=data.url; a.target='_blank'; a.rel='noopener noreferrer'; document.body.appendChild(a); a.click(); a.remove();
+      window.location.assign(data.url);
     }catch(e){alert('فشل تحميل الملف: '+e.message)}
   }
   const orderSearchText = (o) => `${o.clientName||''} ${o.clientPhone||''}`.toLowerCase()
@@ -332,8 +332,8 @@ export default function App() {
   }
   const handleAddOrderToFolder = async (folderId,orderId) => {
     const f=folders.find(x=>String(x.id)===String(folderId))
-    if(!f)return
-    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(Array.isArray(f.orderIds)?f.orderIds:[]).map(String),String(orderId)])]})}
+    if(!f){alert('الفولدر غير موجود، حدث الصفحة وحاول مجددًا');return}
+    try {await folderRequest('/'+f.id,'PUT',{orderIds:[...new Set([...(Array.isArray(f.orderIds)?f.orderIds:[]).map(String),String(orderId)])]});setOrdersStatusFilter('قيد التنفيذ')}
     catch(e){alert('فشل إضافة الأوردر للفولدر: '+e.message)}
   }
   const handleMoveOrderToFolder = async (fromFolderId,toFolderId,orderId) => {
