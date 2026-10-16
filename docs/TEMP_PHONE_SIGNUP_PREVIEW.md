@@ -22,3 +22,14 @@ The owner asked to keep building the Elmarwa order system while Meta WhatsApp Bu
 - `node --test api/customer-temporary.test.js` covers OFF-by-default, distinct and international-format duplicate phones, Turnstile, password and input validation, password-backed Auth identity, session ownership, denial for unknown users, and failed insert cleanup.
 - Required CI runs this test in addition to all original React and API tests.
 - With an **isolated** Supabase test instance, configure the two flags only for the test branch, `ELMARWA_TEMP_SIGNUP_TEST_DB_REF` to the isolated project's 20-letter ref, and the matching Turnstile site/secret keys; verify signup, login, refresh, customer separation, one actual PDF order, and database persistence. Never use real customer phone numbers or real orders during testing.
+
+
+## Isolated Preview environment wiring
+The test deployment must have its **own** Supabase project, its own Auth users, and disposable catalog data. Scope all variables to the test branch (not all Previews). Every URL/key in this group must come from the same isolated project:
+- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (server only) and `SUPABASE_ANON_KEY` (public Auth key).
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (public build-time values).
+- `ELMARWA_TEMP_SIGNUP_TEST_DB_REF` exactly matching the test URL's project ref; never use `oosihqinkatldjmciutu`.
+- `VITE_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` from a Turnstile widget restricted to the Preview's allowed hostnames.
+- Finally set `ENABLE_TEMP_PHONE_SIGNUP=true` and `VITE_ENABLE_TEMP_PHONE_SIGNUP=true` **only** for the isolated branch.
+
+Rebuild the Preview after changing build-time variables. Validate the public API catalog and unauthenticated access rules, then register only fictional customers, refresh and check the isolated database. If any of the conditions above is missing, keep both registration flags false.
