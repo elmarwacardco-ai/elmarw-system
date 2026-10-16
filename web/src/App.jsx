@@ -346,7 +346,7 @@ export default function App() {
       alert('تم حفظ تعديلات الأوردر بالكامل ✅')
     }
     return (
-      <div id={`order-${o.id}`} style={{background:'white',borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
+      <div className="admin-order-card" id={`order-${o.id}`} style={{background:'white',borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
         <div style={{padding:'9px 11px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap',background:'#f8fafc',borderBottom:'1px solid #e5e7eb'}}>
           <div style={{display:'flex',alignItems:'center',gap:'7px',flexWrap:'wrap'}}>
             <b style={{fontSize:'13px'}}>👤 العميل: {o.clientName}</b>
@@ -392,6 +392,21 @@ export default function App() {
     return (
       <>
       <style>{`
+        .admin-shell, .admin-shell * { box-sizing:border-box; }
+        .admin-main { min-width:0; max-width:100%; }
+        .admin-order-card { min-width:0; max-width:100%; }
+        .admin-order-card > div { min-width:0; }
+        .admin-order-card input, .admin-order-card select { max-width:100%; min-width:0; }
+        @media (max-width: 700px) {
+          .admin-shell { width:100%; max-width:100vw; overflow-x:hidden; }
+          .admin-main { width:100% !important; min-width:0 !important; overflow-x:hidden; }
+          .admin-order-card { width:100%; overflow:hidden; }
+          .admin-order-card > div[style*="grid"] { grid-template-columns:minmax(0,1fr) !important; }
+          .admin-order-card > div[style*="flex"] { flex-wrap:wrap !important; }
+          .admin-order-card > div[style*="flex"] > * { max-width:100%; }
+          .admin-order-card button, .admin-order-card select { white-space:normal; }
+          .admin-order-card select { min-width:0 !important; width:100%; }
+        }
         @media (max-width: 900px) {
           .admin-shell { flex-direction: column !important; }
           .admin-sidebar { width: 100% !important; height: auto !important; position: relative !important; }
