@@ -58,6 +58,28 @@ export default async function handler(req, res) {
       });
     }
 
+    if (key === 'payments' && ['GET','POST'].includes(req.method)) {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\\s+(.+)$/i)?.[1];
+      if(!token) return res.status(401).json({error:'Login required'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if(authError||!auth?.user) return res.status(401).json({error:'Invalid session'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if(!admin) return res.status(403).json({error:'صلاحية الحسابات للمدير فقط'});
+      const orderId=pathname.split('/')[3];
+      if(!/^[0-9a-f-]{36}$/i.test(orderId||'')) return res.status(400).json({error:'رقم الأوردر غير صحيح'});
+      if(req.method==='GET'){
+        const {data:rows,error}=await db.from('order_payments').select('id,amount,method,created_at').eq('order_id',orderId).order('created_at',{ascending:false});
+        if(error) return res.status(500).json({error:'تعذر قراءة الدفعات'});
+        return res.status(200).json(rows||[]);
+      }
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+      const amount=Number(body?.amount),method=String(body?.method||'');
+      if(!Number.isFinite(amount)||amount<=0||Math.round(amount*100)/100!==amount||!['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].includes(method)) return res.status(400).json({error:'راجع قيمة الدفعة وطريقتها'});
+      const {data:paid,error}=await db.rpc('marwa_record_payment',{p_order:orderId,p_amount:amount,p_method:method,p_actor:auth.user.id});
+      if(error) return res.status(400).json({error:'تعذر تسجيل الدفعة؛ تأكد من المبلغ المتبقي'});
+      return res.status(201).json({paidAmount:paid});
+    }
     // Public customer signup: use Supabase Auth, never store plaintext passwords.
     if (key === 'clients' && req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -283,7 +305,8 @@ export default async function handler(req, res) {
       if (body?.status==='معلق' && !String(body?.holdReason??details.holdReason??'').trim()) return res.status(400).json({error:'اكتب سبب تعليق الأوردر'});
       if (body?.holdReason!==undefined) details.holdReason=String(body.holdReason||'').trim().slice(0,1000);
       if (body?.status!==undefined && body.status!=='معلق') details.holdReason='';
-      if (body?.paidAmount!==undefined) {
+      if (body?.paidAmount!==undefined) return res.status(400).json({error:'سجل دفعة جديدة من قسم الحسابات بدلاً من تعديل إجمالي المدفوع'});
+      if (false) {
         const amount=Number(body.paidAmount);
         if (!Number.isFinite(amount)||amount<0||amount>Number(details.total||0)) return res.status(400).json({error:'المبلغ المدفوع غير صحيح'});
         details.paidAmount=amount;
