@@ -278,17 +278,16 @@ export default function App() {
     if(!orderFile){ alert('من فضلك ارفع ملف الطلب أولاً 📎'); return }
     if (!/\.(pdf|jpe?g|zip|rar|7z)$/i.test(orderFile.name)) { alert('الملفات المقبولة: PDF أو JPG أو JPEG أو ZIP أو RAR أو 7Z'); return }
     const total = cart.reduce((s,i)=>s+i.total,0);
-    const serialNumber = generateSerial();
     if(orderFile.size > 3*1024*1024){ alert('الحد المؤقت لحجم الملف 3 ميجابايت'); return }
+    try {
     const fileData = await readFileAsDataUrl(orderFile);
     const newOrder = {
-      serialNumber, executionDate: new Date().toISOString().slice(0,10), readyDate: '',
+      executionDate: new Date().toISOString().slice(0,10), readyDate: '',
       clientName: loggedClient.name, clientPhone: loggedClient.phone, clientId: loggedClient.id,
       workerName: orderClientName.trim(), items: cart, total, paidAmount:0, paymentStatus:'غير مدفوع',
       paymentMethod: customerPaymentMethod, paymentProof:'', notes: orderNotes, status:'جديد',
       date: new Date().toLocaleString('ar-EG'), fileName: orderFile.name, fileData
     };
-    try {
       const res = await fetch(`${API}/orders`, {method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${customerToken}`}, body: JSON.stringify(newOrder)});
       if(!res.ok) { const body = await res.json().catch(()=>({})); throw new Error(body.error || `HTTP ${res.status}`) }
       setCart([]); setOrderClientName(''); setOrderNotes(''); setOrderFile(null); setCustomerPaymentMethod('نقدي'); setShowCart(false);
