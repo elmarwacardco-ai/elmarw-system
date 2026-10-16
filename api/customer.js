@@ -11,15 +11,17 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const toE164 = phone => '+20' + phone.slice(1);
 // Internal-only login alias; never sent to a customer or used as proof of email/phone ownership.
 const temporaryEmail = phone => 'elmarwa-temporary-' + phone + '@example.com';
-// A Preview must be pinned to an explicitly isolated Supabase test project.
-// Vercel Preview normally inherits the same database as production, so a
-// feature flag alone must never make unverified phone enrollment writable.
+// Test-only phone/password registration. Production can never enable it.
+// A Preview using the existing trial database requires separate owner opt-in,
+// so a generic feature flag cannot silently expose the shared project.
 export function temporarySignupAllowed() {
   if (process.env.ENABLE_TEMP_PHONE_SIGNUP !== 'true' ||
       process.env.VERCEL_ENV === 'production') return false;
   if (process.env.VERCEL_ENV !== 'preview') return true; // local test harness
   const testRef = String(process.env.ELMARWA_TEMP_SIGNUP_TEST_DB_REF || '');
-  if (!/^[a-z0-9]{20}$/.test(testRef) || testRef === 'oosihqinkatldjmciutu') return false;
+  if (!/^[a-z0-9]{20}$/.test(testRef)) return false;
+  if (testRef === 'oosihqinkatldjmciutu' &&
+      process.env.ELMARWA_TEST_DATA_ACK !== 'true') return false;
   try {
     const url = new URL(process.env.SUPABASE_URL || '');
     return url.protocol === 'https:' &&
