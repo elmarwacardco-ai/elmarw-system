@@ -524,6 +524,16 @@ export default function App() {
     <div className="elmarwa-storefront" style={{ fontFamily: 'Tahoma', direction: 'rtl', minHeight:'100vh' }}>
       <style>{`
         .elmarwa-storefront, .elmarwa-storefront * { box-sizing: border-box; }
+        .customer-order-layout { width:100%; }
+        .customer-order-layout td { overflow-wrap:anywhere; word-break:break-word; }
+        .payment-proof-panel { overflow-wrap:anywhere; }
+        @media (max-width:700px) {
+          .customer-order-layout { flex-direction:column !important; }
+          .customer-order-layout > div { width:100% !important; min-width:0 !important; }
+          .payment-proof-panel { order:2; border-left:0 !important; border-top:1px solid #e2e8f0; }
+          .customer-order-layout table td { padding:9px 7px !important; font-size:12px; }
+        }
+
         .elmarwa-storefront { width:100%; max-width:100%; overflow-x:clip; }
         .elmarwa-storefront img { max-width:100%; }
         .elmarwa-storefront input, .elmarwa-storefront select, .elmarwa-storefront textarea { max-width:100%; min-width:0; }
@@ -571,13 +581,12 @@ export default function App() {
                 <div key={o.id} style={{background:'white', borderRadius:'12px', marginBottom:'14px', border:'1px solid #e2e8f0', overflow:'hidden'}}>
                   <div style={{height:'5px', background: statusColor(o.status)}}></div>
                   <div style={{background:'#000', color:'white', padding:'4px 10px', fontSize:'11px', fontWeight:900, display:'flex', justifyContent:'space-between'}}><span>سيريال: {o.serialNumber||o.id}</span><button onClick={()=> printSticker(o)} style={{background:'white', color:'black', border:'none', padding:'2px 8px', borderRadius:'10px', fontSize:'9px', fontWeight:'bold', cursor:'pointer'}}>🖨️ استيكر 4x2</button></div>
-                  <div style={{display:'flex'}}>
-                    <div style={{width:'170px', background:'#f8fafc', borderLeft:'1px solid #e2e8f0', padding:'12px', textAlign:'center'}}>
-                      <div style={{width:'130px', height:'130px', background:'white', borderRadius:'10px', border:'1px solid #e2e8f0', margin:'0 auto', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center'}}>{(()=>{ const prod = products.find(p=> String(p.id)===String(items[0]?.productId)); const img = items[0]?.image || prod?.image; return img? <img src={img} style={{width:'100%', height:'100%', objectFit:'cover'}}/> : <span style={{fontSize:'11px', color:'#999'}}>صورة العمل</span> })()}</div>
+                  <div className="customer-order-layout" style={{display:'flex',flexDirection:'row-reverse',minWidth:0}}>
+                    <div className="payment-proof-panel" style={{width:'170px',flexShrink:0, background:'#f8fafc', borderLeft:'1px solid #e2e8f0', padding:'12px', textAlign:'center'}}>
                       <div style={{marginTop:'10px'}}><div style={{fontSize:'11px', fontWeight:'bold'}}>📸 اسكرين التحويل</div>{o.paymentProof? <div style={{background:'#dcfce7', border:'1px solid #16a34a', padding:'6px', borderRadius:'8px', fontSize:'10px', marginTop:'4px', color:'#166534'}}>✅ {o.paymentProof}</div> : <div style={{fontSize:'10px', color:'#94a3b8', marginTop:'4px'}}>لم يتم الرفع</div>}<label style={{display:'block', marginTop:'6px', background:'#1e3a8a', color:'white', padding:'7px', borderRadius:'8px', fontSize:'11px', cursor:'pointer', fontWeight:'bold'}}>رفع اسكرين<input type="file" accept="image/*" style={{display:'none'}} onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; await updateOrder(o.id, {paymentProof: file.name}); alert('تم الرفع ✅'); }}/></label></div>
                     </div>
-                    <div style={{flex:1}}>
-                      <table style={{width:'100%', borderCollapse:'collapse', fontSize:'13px'}}><tbody>
+                    <div style={{flex:1,minWidth:0}}>
+                      <table style={{width:'100%', borderCollapse:'collapse', fontSize:'13px',tableLayout:'fixed'}}><tbody>
                         <tr style={{borderBottom:'1px solid #f1f5f9'}}><td style={{padding:'10px 14px', color:'#64748b', width:'100px'}}>اسم العميل</td><td style={{padding:'10px 14px', fontWeight:900}}>{o.clientName}</td></tr><tr style={{borderBottom:'1px solid #f1f5f9', background:'#eef2ff'}}><td style={{padding:'10px 14px', color:'#3730a3',fontWeight:800}}>الشغال</td><td style={{padding:'10px 14px', fontWeight:900, color:'#3730a3'}}>{o.workerName||'لم يتم تحديده'}</td></tr>
                         <tr style={{borderBottom:'1px solid #f1f5f9', background:'#f8fafc'}}><td style={{padding:'10px 14px', color:'#64748b'}}>رقم الطلب</td><td style={{padding:'10px 14px', fontWeight:900}}>#{o.serialNumber||o.id} - {o.date}</td></tr>
                         <tr style={{borderBottom:'1px solid #f1f5f9'}}><td style={{padding:'10px 14px', color:'#64748b'}}>التكلفة</td><td style={{padding:'10px 14px', fontWeight:900, color:'#16a34a', fontSize:'15px'}}>{total} ج</td></tr>
