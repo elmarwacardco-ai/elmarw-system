@@ -92,11 +92,26 @@ export default function App() {
   }
 
 
+  const loadCatalog = async () => {
+    const resources = ['categories','subCategories','products']
+    const setters = [setCategories,setSubCategories,setProducts]
+    const results = await Promise.allSettled(resources.map(async key => {
+      const response = await fetch(`${API}/${key}`)
+      const data = await response.json().catch(()=>null)
+      if (!response.ok || !Array.isArray(data)) throw new Error(data?.error || `Failed to load ${key}`)
+      return data
+    }))
+    results.forEach((result,index) => {
+      if (result.status === 'fulfilled') setters[index](result.value)
+      else console.error(`Catalog load error: ${resources[index]}`,result.reason)
+    })
+  }
+
   const loadAll = async (token = sessionStorage.getItem(TOKEN_KEY)) => {
     if (!token) return
 
     const resources = [
-      'clients', 'categories', 'subcategories',
+      'clients', 'categories', 'subCategories',
       'products', 'orders', 'folders', 'employees'
     ]
     const setters = [
@@ -120,6 +135,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    loadCatalog()
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) {
