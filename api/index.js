@@ -138,7 +138,7 @@ export default async function handler(req, res) {
             changes.orderIds=ids;
           }
           if (body?.status!==undefined) {
-            if (!['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(body.status)) return res.status(400).json({error:'حالة فولدر غير صحيحة'});
+            if (!['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم','تم التسليم'].includes(body.status)) return res.status(400).json({error:'حالة فولدر غير صحيحة'});
             changes.status=body.status;
           }
           if (body?.name!==undefined) {
