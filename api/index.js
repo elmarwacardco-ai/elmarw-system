@@ -169,7 +169,7 @@ export default async function handler(req, res) {
       if (req.method==='PUT'&&body?.status!==undefined) {
         for (const orderId of result.orderIds||[]) {
           const {data:order}=await db.from('customer_orders').select('details').eq('id',orderId).maybeSingle();
-          if (order) await db.from('customer_orders').update({details:{...order.details,status:result.status}}).eq('id',orderId);
+          if (order) { const {error:statusError}=await db.from('customer_orders').update({details:{...order.details,status:result.status}}).eq('id',orderId); if (statusError) return res.status(500).json({error:'تم حفظ الفولدر لكن فشل تحديث حالة أحد الأوردرات'}); }
         }
       }
       return res.status(req.method==='POST'?201:200).json(result);
