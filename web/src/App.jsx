@@ -16,6 +16,7 @@ async function apiRead(resource, token) {
 
 export default function App() {
   const [clients, setClients] = useState([])
+  const [customerToken, setCustomerToken] = useState(() => sessionStorage.getItem('elmarw_customer_token') || '')
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [subCategories, setSubCategories] = useState([])
@@ -135,6 +136,11 @@ export default function App() {
   }
 
   useEffect(() => {
+    const token = sessionStorage.getItem('elmarw_customer_token')
+    if (token) fetch(`${API}/clients?self=1`,{headers:{Authorization:`Bearer ${token}`}}).then(async response=>{
+      if (!response.ok) throw new Error('expired')
+      setLoggedClient(await response.json())
+    }).catch(()=>{sessionStorage.removeItem('elmarw_customer_token');setCustomerToken('');setLoggedClient(null)})
     loadCatalog()
     // لا نثق في جلسة مخزنة إلا بعد تحقق السيرفر من صلاحية المدير
     const token = sessionStorage.getItem(TOKEN_KEY)
@@ -211,7 +217,10 @@ export default function App() {
       const profileResponse = await fetch(`${API}/clients?self=1`,{headers:{Authorization:`Bearer ${auth.access_token}`}})
       const profile = await profileResponse.json().catch(()=>({}))
       if (!profileResponse.ok) throw new Error(profile.error || 'تعذر تحميل حساب العميل')
+      sessionStorage.setItem('elmarw_customer_token',auth.access_token)
+      setCustomerToken(auth.access_token)
       setLoggedClient(profile)
+      fetch(`${API}/orders`,{headers:{Authorization:`Bearer ${auth.access_token}`}}).then(r=>r.ok?r.json():[]).then(setOrders).catch(console.error)
       setShowLogin(false)
       setLogin({phone:'',pass:''})
     } catch (error) { alert('تعذر الدخول: ' + error.message) }
@@ -265,6 +274,7 @@ export default function App() {
     if (!/\.(pdf|jpe?g|zip|rar|7z)$/i.test(orderFile.name)) { alert('الملفات المقبولة: PDF أو JPG أو JPEG أو ZIP أو RAR أو 7Z'); return }
     const total = cart.reduce((s,i)=>s+i.total,0);
     const serialNumber = generateSerial();
+    if(orderFile.size > 3*1024*1024){ alert('الحد المؤقت لحجم الملف 3 ميجابايت'); return }
     const fileData = await readFileAsDataUrl(orderFile);
     const newOrder = {
       serialNumber, executionDate: new Date().toISOString().slice(0,10), readyDate: '',
@@ -274,10 +284,11 @@ export default function App() {
       date: new Date().toLocaleString('ar-EG'), fileName: orderFile.name, fileData
     };
     try {
-      const res = await fetch(`${API}/orders`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(newOrder)});
+      const res = await fetch(`${API}/orders`, {method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${customerToken}`}, body: JSON.stringify(newOrder)});
       if(!res.ok) { const body = await res.json().catch(()=>({})); throw new Error(body.error || `HTTP ${res.status}`) }
       setCart([]); setOrderClientName(''); setOrderNotes(''); setOrderFile(null); setCustomerPaymentMethod('نقدي'); setShowCart(false);
-      await loadAll();
+      const myResponse = await fetch(`${API}/orders`,{headers:{Authorization:`Bearer ${customerToken}`}})
+      if(myResponse.ok) setOrders(await myResponse.json())
       setShowMyOrders(true);
       alert('تم إرسال الطلب بنجاح ✅');
     } catch(e){ console.error('Order submission failed:',e); alert('تعذر إرسال الطلب: ' + e.message); }
