@@ -103,6 +103,64 @@ export default async function handler(req, res) {
       if (!Array.isArray(items)) return res.status(500).json({error:'Invalid catalog'});
       return res.status(200).json(items);
     }
+    // Manager-only folder management for production workflow.
+    if (key === 'folders' && ['POST','PUT','DELETE'].includes(req.method)) {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return res.status(401).json({error:'يرجى تسجيل دخول المدير'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if (authError||!auth?.user) return res.status(401).json({error:'جلسة المدير غير صالحة'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if (!admin) return res.status(403).json({error:'غير مسموح بإدارة الفولدرات'});
+      const {data:record,error:readError}=await db.from('app_data').select('data').eq('id',1).maybeSingle();
+      if (readError||!record) return res.status(500).json({error:'تعذر قراءة الفولدرات'});
+      const all=record.data||{};
+      const folders=Array.isArray(all.folders)?all.folders:[];
+      const id=pathname.split('/')[3];
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+      let next, result;
+      if (req.method==='POST') {
+        const name=String(body?.name||'').trim();
+        if (!name||name.length>120) return res.status(400).json({error:'اسم الفولدر غير صحيح'});
+        result={id:crypto.randomUUID(),name,date:new Date().toISOString(),status:'جديد',orderIds:[]};
+        next=[...folders,result];
+      } else {
+        const current=folders.find(f=>String(f.id)===String(id));
+        if (!current) return res.status(404).json({error:'الفولدر غير موجود'});
+        if (req.method==='DELETE') {next=folders.filter(f=>String(f.id)!==String(id));result={deleted:true};}
+        else {
+          const changes={};
+          if (body?.orderIds!==undefined) {
+            if (!Array.isArray(body.orderIds)||body.orderIds.length>2000) return res.status(400).json({error:'قائمة الأوردرات غير صحيحة'});
+            const ids=[...new Set(body.orderIds.map(String))];
+            const {data:existing,error:idsError}=await db.from('customer_orders').select('id').in('id',ids.length?ids:['00000000-0000-0000-0000-000000000000']);
+            if (idsError||existing.length!==ids.length) return res.status(400).json({error:'أحد الأوردرات غير موجود'});
+            changes.orderIds=ids;
+          }
+          if (body?.status!==undefined) {
+            if (!['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(body.status)) return res.status(400).json({error:'حالة فولدر غير صحيحة'});
+            changes.status=body.status;
+          }
+          if (body?.name!==undefined) {
+            const name=String(body.name).trim();
+            if (!name||name.length>120) return res.status(400).json({error:'اسم غير صحيح'});
+            changes.name=name;
+          }
+          result={...current,...changes};
+          next=folders.map(f=>String(f.id)===String(id)?result:f);
+          if (changes.orderIds) next=next.map(f=>String(f.id)===String(id)?f:{...f,orderIds:(f.orderIds||[]).filter(oid=>!changes.orderIds.includes(String(oid)))});
+        }
+      }
+      const {error:writeError}=await db.from('app_data').update({data:{...all,folders:next}}).eq('id',1);
+      if (writeError) return res.status(500).json({error:'فشل حفظ الفولدر'});
+      if (req.method==='PUT'&&body?.status!==undefined) {
+        for (const orderId of result.orderIds||[]) {
+          const {data:order}=await db.from('customer_orders').select('details').eq('id',orderId).maybeSingle();
+          if (order) await db.from('customer_orders').update({details:{...order.details,status:result.status}}).eq('id',orderId);
+        }
+      }
+      return res.status(req.method==='POST'?201:200).json(result);
+    }
     // Upload real payment screenshot, not just its filename.
     if (key === 'orders' && req.method === 'POST' && pathname.endsWith('/payment-proof')) {
       const id=pathname.split('/')[3];
