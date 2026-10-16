@@ -276,9 +276,9 @@ export default async function handler(req, res) {
       const {error:uploadError} = await db.storage.from('customer-order-files').upload(path,bytes,{contentType:'application/octet-stream',upsert:false});
       if (uploadError) return res.status(500).json({error:'تعذر رفع ملف الطلب'});
       const details = {serialNumber:serial,clientId:profile.id,clientName:profile.name,clientPhone:profile.phone,items:safeItems,total,paidAmount:0,paymentStatus:'غير مدفوع',paymentMethod:['نقدي','فودافون كاش'].includes(body.paymentMethod)?body.paymentMethod:'نقدي',notes:String(body.notes||'').slice(0,2000),workerName:String(body.workerName||'').slice(0,120),status:'جديد',fileName,executionDate:new Date().toISOString().slice(0,10),readyDate:''};
-      const {data:created,error:saveError} = await db.from('customer_orders').insert({customer_id:profile.id,serial_number:serial,details,file_path:path}).select('id').single();
+      const {data:created,error:saveError} = await db.from('customer_orders').insert({customer_id:profile.id,serial_number:serial,details,file_path:path}).select('id,serial_number').single();
       if (saveError) {await db.storage.from('customer-order-files').remove([path]); return res.status(500).json({error:'تعذر حفظ الطلب'});}
-      return res.status(201).json({id:created.id,serialNumber:serial});
+      return res.status(201).json({id:created.id,serialNumber:created.serial_number});
     }
     if (key === 'orders' && req.method === 'GET') {
       const db=getDatabase();
