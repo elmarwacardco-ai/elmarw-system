@@ -14,7 +14,7 @@ const temporaryEmail = phone => 'elmarwa-temporary-' + phone + '@example.com';
 // A Preview must be pinned to an explicitly isolated Supabase test project.
 // Vercel Preview normally inherits the same database as production, so a
 // feature flag alone must never make unverified phone enrollment writable.
-function temporarySignupAllowed() {
+export function temporarySignupAllowed() {
   if (process.env.ENABLE_TEMP_PHONE_SIGNUP !== 'true' ||
       process.env.VERCEL_ENV === 'production') return false;
   if (process.env.VERCEL_ENV !== 'preview') return true; // local test harness
