@@ -179,8 +179,27 @@ export default function App() {
   const statusColor = (s) => { if(s==='جديد') return '#2563eb'; if(s==='قيد التنفيذ') return '#3b82f6'; if(s==='قيد الطباعة') return '#1d4ed8'; if(s==='جاهز للتسليم') return '#64748b'; if(s==='تم التسليم') return '#475569'; if(s==='ملغي') return '#94a3b8'; return '#64748b' }
   const updateOrder = async (id, updates) => { const oldOrder = orders.find(o=> o.id===id); await fetch(`${API}/orders/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)}); if(oldOrder && (updates.status || updates.paidAmount!==undefined || updates.paymentMethod)){ const newNotif = { id: Date.now(), orderId: id, clientId: oldOrder.clientId, clientPhone: oldOrder.clientPhone, msg: `طلبك #${id} ${updates.status? `بقى: ${updates.status}`:''} ${updates.paidAmount!==undefined? ` - المدفوع: ${updates.paidAmount}ج`:''}`, date: new Date().toLocaleString('ar-EG'), read: false }; setNotifications(prev=> [newNotif,...prev].slice(0,50)) } loadAll() }
   const myUnread = notifications.filter(n=> { if(!loggedClient) return false; return (String(n.clientId)===String(loggedClient.id) || String(n.clientPhone).replace(/\D/g,'')===String(loggedClient.phone).replace(/\D/g,'')) &&!n.read })
-  const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(form.phone.length!==11){ alert('الموبايل لازم 11 رقم'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } try { const response = await fetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`); alert('تم التسجيل بنجاح ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); await loadAll(); } catch (error) { alert('فشل تسجيل العميل: ' + error.message); } }
-  const handleLogin = () => { const c = clients.find(x => String(x.phone) === String(login.phone) && x.pass === login.pass); if(c){ setLoggedClient(c); setShowLogin(false); setLogin({phone:'', pass:''}) } else { alert('بيانات غلط ❌\n\nلو نسيت الباسورد برجاء التواصل مع خدمة العملاء\n📞 01000000000') } }
+  const handleRegister = async () => { if(!form.name ||!form.phone ||!form.company ||!form.address ||!form.pass){ alert('املأ كل البيانات'); return } if(!/^01[0-9]{9}$/.test(form.phone)){ alert('الموبايل لازم 11 رقم مصري صحيح'); return } if(form.pass.length<8){ alert('كلمة المرور لازم 8 أحرف على الأقل'); return } const exists = clients.find(c=> String(c.phone).replace(/\D/g,'') === String(form.phone).replace(/\D/g,'')); if(exists){ alert('الرقم ده متسجل قبل كده ❌ - '+exists.name); return } try { const response = await fetch(`${API}/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...form, type:'B', balance:0})}); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`); alert('تم التسجيل بنجاح ✅'); setShowForm(false); setForm({ name: '', phone: '', company: '', address: '', pass: '' }); await loadAll(); } catch (error) { alert('فشل تسجيل العميل: ' + error.message); } }
+  const handleLogin = async () => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) { alert('إعدادات الدخول غير متاحة'); return }
+    const phone = String(login.phone || '').trim()
+    if (!/^01[0-9]{9}$/.test(phone) || !login.pass) { alert('اكتب رقم الموبايل وكلمة المرور'); return }
+    try {
+      const email = 'eg20' + phone + '@customers.elmarwa.invalid'
+      const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method:'POST', headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY},
+        body:JSON.stringify({email,password:login.pass})
+      })
+      const auth = await response.json().catch(()=>({}))
+      if (!response.ok || !auth.access_token) throw new Error('رقم الموبايل أو كلمة المرور غير صحيحة')
+      const profileResponse = await fetch(`${API}/clients?self=1`,{headers:{Authorization:`Bearer ${auth.access_token}`}})
+      const profile = await profileResponse.json().catch(()=>({}))
+      if (!profileResponse.ok) throw new Error(profile.error || 'تعذر تحميل حساب العميل')
+      setLoggedClient(profile)
+      setShowLogin(false)
+      setLogin({phone:'',pass:''})
+    } catch (error) { alert('تعذر الدخول: ' + error.message) }
+  }
   const handleAdminLogin = async () => {
     const email = adminLogin.user.trim()
     const password = adminLogin.pass
