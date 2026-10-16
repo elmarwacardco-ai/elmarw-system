@@ -9,7 +9,8 @@ const allowedKeys = new Set([
   'orders',
   'employees',
   'folders',
-  'payments'
+  'payments',
+  'wallet'
 ]);
 
 function getDatabase() {
@@ -81,6 +82,20 @@ export default async function handler(req, res) {
       const {data:paid,error}=await db.rpc('marwa_record_payment',{p_order:orderId,p_amount:amount,p_method:method,p_actor:auth.user.id});
       if(error) return res.status(400).json({error:'تعذر تسجيل الدفعة؛ تأكد من المبلغ المتبقي'});
       return res.status(201).json({paidAmount:paid});
+    }
+    if(key==='wallet'&&req.method==='POST'){
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      const {data:auth,error:authError}=await db.auth.getUser(token||'');
+      if(authError||!auth?.user)return res.status(401).json({error:'يلزم تسجيل الدخول'});
+      const {data:admin}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if(!admin)return res.status(403).json({error:'إضافة الرصيد للمدير فقط'});
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+      const amount=Number(body?.amount),method=String(body?.method||'');
+      if(!Number.isFinite(amount)||amount<=0||Math.round(amount*100)/100!==amount||!['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].includes(method))return res.status(400).json({error:'راجع مبلغ الشحن وطريقة الدفع'});
+      const {data,error}=await db.rpc('marwa_topup_wallet',{p_customer:body.customerId,p_amount:amount,p_method:method,p_actor:auth.user.id,p_reference:String(body.reference||'')});
+      if(error)return res.status(400).json({error:'تعذر شحن الرصيد'});
+      return res.status(201).json({balance:data});
     }
     // Public customer signup: use Supabase Auth, never store plaintext passwords.
     if (key === 'clients' && req.method === 'POST') {
