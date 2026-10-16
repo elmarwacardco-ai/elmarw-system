@@ -8,7 +8,8 @@ const allowedKeys = new Set([
   'products',
   'orders',
   'employees',
-  'folders'
+  'folders',
+  'payments'
 ]);
 
 function getDatabase() {
