@@ -107,7 +107,7 @@ export default async function handler(req, res) {
         draftId = newDraft.id;
       }
       const patch = {last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()};
-      const jobMatch = message.text_body?.match(/^\\s*اسم\\s*الشغل\\s*[:：-]\\s*(.{1,120})\\s*$/i);
+      const jobMatch = message.text_body?.match(/^\s*اسم\s*الشغل\s*[:：-]\s*(.{1,120})\s*$/i);
       if (jobMatch) { patch.job_name = jobMatch[1].trim(); patch.step='product'; }
       if (message.message_type === 'document' && message.media_mime_type === 'application/pdf' && message.media_id) {
         patch.pdf_media_id = message.media_id;
