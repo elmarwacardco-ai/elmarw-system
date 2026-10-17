@@ -275,7 +275,7 @@ export default function App() {
     const price = loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty];
     if(price===undefined || price===null || price==='') return;
     setCart(prev => [...prev, { id: Date.now(), productId: product.id, subCategoryId: product.subCategoryId, name: product.name, image: product.image||'', qty: Number(qty), price: Number(price), total: Number(price) }]);
-    setShowCart(true)
+    // Keep cart collapsed after adding an item; customer opens it from the cart button.
   }
   const handlePlaceOrder = async () => {
     if(cart.length === 0){ alert('اختر منتج أولاً'); return }
