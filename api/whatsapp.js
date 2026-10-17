@@ -114,6 +114,23 @@ export default async function handler(req, res) {
         patch.pdf_filename = message.media_filename;
         patch.step = 'product';
       }
+      const quantityMatch=message.text_body?.match(/^(?:الكمية|كمية)[:：-] ?([0-9]+)$/);
+      if(quantityMatch){
+        const qty=Number(quantityMatch[1]);
+        if(qty>=1000 && qty<=10000 && qty%1000===0)patch.quantity=qty;
+      }
+      const productMatch=message.text_body?.match(/^(?:المنتج|منتج)[:：-] ?([a-zA-Z0-9_-]+)$/);
+      if(productMatch){
+        const {data:catalog,error:catalogError}=await db.from('app_data').select('data').eq('id',1).single();
+        if(catalogError)return res.status(503).json({error:'Catalog unavailable'});
+        const product=(catalog?.data?.products||[]).find(p=>String(p.id)===productMatch[1]);
+        if(product)patch.product_id=String(product.id);
+      }
+      const merged={...openDraft,...patch};
+      if(merged.job_name && merged.product_id && merged.quantity && merged.pdf_media_id){
+        patch.status='pending_review';
+        patch.step='review';
+      }
       const {error:updateError}=await db.from('whatsapp_order_drafts').update(patch).eq('id',draftId);
       if (updateError) {
         console.error('WhatsApp draft update failed',{code:updateError.code});
