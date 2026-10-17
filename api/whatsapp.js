@@ -86,6 +86,46 @@ export default async function handler(req, res) {
       console.error('WhatsApp message insert failed', { code: messageError.code });
       return res.status(503).json({ error: 'Inbound message persistence unavailable' });
     }
+    if (!messageError) {
+      // Keep one collecting draft per WhatsApp sender; do not create official orders.
+      const { data:openDraft, error:lookupError } = await db.from('whatsapp_order_drafts')
+        .select('id,job_name,product_id,quantity,pdf_media_id')
+        .eq('wa_id', message.wa_id).eq('status','collecting')
+        .order('created_at',{ascending:false}).limit(1).maybeSingle();
+      if (lookupError) {
+        console.error('WhatsApp draft lookup failed', { code: lookupError.code });
+        return res.status(503).json({ error: 'Draft storage unavailable' });
+      }
+      let draftId = openDraft?.id;
+      if (!draftId) {
+        const {data:newDraft,error:draftError} = await db.from('whatsapp_order_drafts')
+          .insert({wa_id:message.wa_id,step:'intent'}).select('id').single();
+        if (draftError) {
+          console.error('WhatsApp draft creation failed',{code:draftError.code});
+          return res.status(503).json({error:'Draft storage unavailable'});
+        }
+        draftId = newDraft.id;
+      }
+      const patch = {last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+      const jobMatch = message.text_body?.match(/^\\s*اسم\\s*الشغل\\s*[:：-]\\s*(.{1,120})\\s*$/i);
+      if (jobMatch) { patch.job_name = jobMatch[1].trim(); patch.step='product'; }
+      if (message.message_type === 'document' && message.media_mime_type === 'application/pdf' && message.media_id) {
+        patch.pdf_media_id = message.media_id;
+        patch.pdf_filename = message.media_filename;
+        patch.step = 'product';
+      }
+      const {error:updateError}=await db.from('whatsapp_order_drafts').update(patch).eq('id',draftId);
+      if (updateError) {
+        console.error('WhatsApp draft update failed',{code:updateError.code});
+        return res.status(503).json({error:'Draft storage unavailable'});
+      }
+      const {error:linkError}=await db.from('whatsapp_inbound_messages')
+        .update({draft_id:draftId}).eq('message_id',message.message_id);
+      if (linkError) {
+        console.error('WhatsApp draft message link failed',{code:linkError.code});
+        return res.status(503).json({error:'Draft link unavailable'});
+      }
+    }
   }
   return res.status(200).json({ received: true, messages_saved: messages.length });
 }
