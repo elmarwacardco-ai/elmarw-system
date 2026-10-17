@@ -57,5 +57,35 @@ export default async function handler(req, res) {
     console.error('WhatsApp inbox insert failed', { code: error.code });
     return res.status(503).json({ error: 'Webhook persistence unavailable' });
   }
-  return res.status(200).json({ received: true });
+  // Store individual inbound messages idempotently. Never acknowledge an event
+  // until its message rows have been persisted.
+  const messages = [];
+  for (const entry of payload.entry) {
+    for (const change of (entry.changes || [])) {
+      for (const message of (change.value?.messages || [])) {
+        if (typeof message.id !== 'string' || typeof message.from !== 'string') continue;
+        const kind = message.type || 'unknown';
+        const media = kind === 'document' ? message.document :
+          kind === 'image' ? message.image : kind === 'audio' ? message.audio :
+          kind === 'video' ? message.video : null;
+        messages.push({
+          message_id: message.id,
+          wa_id: message.from,
+          message_type: kind,
+          text_body: kind === 'text' ? (message.text?.body || '').slice(0, 10000) : null,
+          media_id: media?.id || null,
+          media_mime_type: media?.mime_type || null,
+          media_filename: kind === 'document' ? (media?.filename || null) : null
+        });
+      }
+    }
+  }
+  for (const message of messages) {
+    const { error: messageError } = await db.from('whatsapp_inbound_messages').insert(message);
+    if (messageError && messageError.code !== '23505') {
+      console.error('WhatsApp message insert failed', { code: messageError.code });
+      return res.status(503).json({ error: 'Inbound message persistence unavailable' });
+    }
+  }
+  return res.status(200).json({ received: true, messages_saved: messages.length });
 }
