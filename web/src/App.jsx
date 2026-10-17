@@ -442,8 +442,8 @@ export default function App() {
       }
     }
     return (
-      <div className="admin-order-card" id={`order-${o.id}`} style={{background:'white',borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
-        <div style={{padding:'9px 11px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap',background:'#f8fafc',borderBottom:'1px solid #e5e7eb'}}>
+      <div className="admin-order-card" id={`order-${o.id}`} style={{background:({'جديد':'#ffffff','قيد التنفيذ':'#dcfce7','قيد الطباعة':'#fee2e2','جاهز للتسليم':'#dbeafe'}[o.status]||'#ffffff'),borderRadius:'14px',marginBottom:'10px',border:'1px solid #dbe3ef',borderRight:`6px solid ${statusColor(o.status||'جديد')}`,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
+        <div style={{padding:'9px 11px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap',background:({'جديد':'#ffffff','قيد التنفيذ':'#bbf7d0','قيد الطباعة':'#fecaca','جاهز للتسليم':'#bae6fd'}[o.status]||'#f8fafc'),borderBottom:'1px solid #e5e7eb'}}>
           <div style={{display:'flex',alignItems:'center',gap:'7px',flexWrap:'wrap'}}>
             <b style={{fontSize:'13px'}}>👤 العميل: {o.clientName}</b>
             <span style={{fontSize:'11px',color:'#64748b'}}>📞 {o.clientPhone}</span>
