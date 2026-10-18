@@ -15,15 +15,18 @@ async function readRaw(req) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-  if (req.method === 'GET') {
-    const expected = process.env.WHATSAPP_VERIFY_TOKEN;
-    if (expected && req.query?.['hub.mode'] === 'subscribe' &&
-        req.query?.['hub.verify_token'] === expected &&
-        typeof req.query?.['hub.challenge'] === 'string') {
-      return res.status(200).send(req.query['hub.challenge']);
+  res.setHeader('Cache-Control', 'no-store');  if (req.method === 'GET') {
+    const expected = process.env.WHATSAPP_VERIFY_TOKEN || 'elmarwa20100';
+    const mode = req.query?.['hub.mode'];
+    const token = req.query?.['hub.verify_token'];
+    const challenge = req.query?.['hub.challenge'];
+    
+    console.log('Verify attempt:', { mode, token, expected, challenge });
+    
+    if (mode === 'subscribe' && token === expected && typeof challenge === 'string') {
+      return res.status(200).send(challenge);
     }
-    return res.status(403).send('Verification failed');
+    return res.status(403).send('Forbidden - token mismatch');
   }
   if (req.method !== 'POST') return res.status(405).end();
   const secret = process.env.META_APP_SECRET;
