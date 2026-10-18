@@ -14,16 +14,43 @@ async function readRaw(req) {
   return Buffer.concat(chunks);
 }
 
+
+async function sendWelcome(to) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!token || !phoneId) {
+    console.error('WhatsApp outbound configuration missing');
+    return false;
+  }
+  try {
+    const response = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(phoneId)}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: 'أهلًا بيك في مطابع المروة 🌟\\nنقدر نساعدك في معرفة الأسعار، تقديم طلب جديد، أو متابعة طلب سابق.' } }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) {
+      console.error('WhatsApp outbound failed', { status: response.status });
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('WhatsApp outbound network error', { name: error?.name });
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');  if (req.method === 'GET') {
-    const expected = process.env.WHATSAPP_VERIFY_TOKEN || 'elmarwa20100';
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'GET') {
+    const expected = process.env.WHATSAPP_VERIFY_TOKEN;
     const mode = req.query?.['hub.mode'];
     const token = req.query?.['hub.verify_token'];
     const challenge = req.query?.['hub.challenge'];
     
-    console.log('Verify attempt:', { mode, token, expected, challenge });
+    // Never log verification secrets or challenges.
     
-    if (mode === 'subscribe' && token === expected && typeof challenge === 'string') {
+    if (expected && mode === 'subscribe' && token === expected && typeof challenge === 'string') {
       return res.status(200).send(challenge);
     }
     return res.status(403).send('Forbidden - token mismatch');
@@ -144,6 +171,10 @@ export default async function handler(req, res) {
       if (linkError) {
         console.error('WhatsApp draft message link failed',{code:linkError.code});
         return res.status(503).json({error:'Draft link unavailable'});
+      }
+      // Reply only to newly saved inbound text messages; duplicates never trigger another send.
+      if (message.message_type === 'text') {
+        await sendWelcome(message.wa_id);
       }
     }
   }
