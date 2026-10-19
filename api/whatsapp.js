@@ -19,7 +19,7 @@ function findClient(clients, phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   const matches = value => {
     const candidate = String(value || '').replace(/\D/g, '');
-    return candidate && (candidate === digits || candidate.slice(-10) === digits.slice(-10));
+    return candidate.length >= 10 && digits.length >= 10 && (candidate === digits || candidate.slice(-10) === digits.slice(-10));
   };
   return clients.find(client => matches(client.phone) || matches(client.phone2) ||
     (Array.isArray(client.phones) && client.phones.some(matches)));
