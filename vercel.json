@@ -13,6 +13,14 @@
       "destination": "/api/whatsapp.js"
     },
     {
+      "source": "/api/whatsapp-review",
+      "destination": "/api/whatsapp-review.js"
+    },
+    {
+      "source": "/api/whatsapp-send",
+      "destination": "/api/whatsapp-send.js"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/index.js"
     },
