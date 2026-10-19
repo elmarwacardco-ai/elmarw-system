@@ -45,7 +45,7 @@ function catalogReply(catalog, phone, intent) {
 function replyForMessage(message, draft, catalog) {
   const text = (message.text_body || '').trim();
   const normalized = text.replace(/[أإآ]/g, 'ا').toLowerCase();
-  if (/^(?:الغاء|إلغاء|cancel)$/.test(normalized)) {
+  if (/^(?:الغاء|cancel)$/.test(normalized)) {
     return 'لإلغاء طلب، برجاء التواصل مع خدمة العملاء. لا يتم إلغاء أي طلب تلقائيًا.';
   }
   if (/^(?:موظف|شخص|خدمة العملاء|تحدث مع شخص)$/.test(normalized)) {
@@ -54,10 +54,10 @@ function replyForMessage(message, draft, catalog) {
   if (/^(?:حالة|متابعة|متابعه|طلب سابق|حالة الطلب)$/.test(normalized)) {
     return 'من فضلك ابعت رقم الأوردر لمتابعته. هنتأكد من ملكية الطلب قبل عرض حالته.';
   }
-  if (/^(?:سعر|اسعار|الاسعار|الأسعار|price)$/.test(normalized)) {
+  if (/^(?:سعر|اسعار|الاسعار|price)$/.test(normalized)) {
     return catalogReply(catalog, message.wa_id, 'price');
   }
-  if (/^(?:طلب|طلب جديد|اوردر|أوردر|new)$/.test(normalized)) {
+  if (/^(?:طلب|طلب جديد|اوردر|new)$/.test(normalized)) {
     return catalogReply(catalog, message.wa_id, 'order');
   }
   if (draft?.status === 'pending_review') {
@@ -66,10 +66,10 @@ function replyForMessage(message, draft, catalog) {
   if (draft?.job_name && draft?.product_id && draft?.quantity && !draft?.pdf_media_id) {
     return 'باقي ملف التصميم PDF علشان نقدر نحول الطلب للمراجعة.';
   }
-  if (/^(?:اسم\\s*الشغل|المنتج|منتج|الكمية|كمية)\\s*[:：-]/.test(text)) {
+  if (/^(?:اسم\s*الشغل|المنتج|منتج|الكمية|كمية)\s*[:：-]/.test(text)) {
     return 'تم تسجيل البيانات المتاحة. للتكملة ابعت اسم الشغل، كود المنتج، الكمية، وملف PDF. مش هنصدر رقم أوردر قبل مراجعة الموظف.';
   }
-  return 'أهلًا بيك في مطابع المروة 🌟\\nاختار الخدمة بكتابة:\\n1- أسعار (اكتب: أسعار)\\n2- طلب جديد (اكتب: طلب جديد)\\n3- متابعة طلب (اكتب: متابعة)\\n4- خدمة العملاء (اكتب: موظف)';
+  return 'أهلًا بيك في مطابع المروة 🌟\nاختار الخدمة بكتابة:\n1- أسعار (اكتب: أسعار)\n2- طلب جديد (اكتب: طلب جديد)\n3- متابعة طلب (اكتب: متابعة)\n4- خدمة العملاء (اكتب: موظف)';
 }
 
 async function sendReply(to, body) {
