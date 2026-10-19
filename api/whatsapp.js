@@ -15,7 +15,34 @@ async function readRaw(req) {
 }
 
 
-function replyForMessage(message, draft) {
+function findClient(clients, phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  const matches = value => {
+    const candidate = String(value || '').replace(/\D/g, '');
+    return candidate && (candidate === digits || candidate.slice(-10) === digits.slice(-10));
+  };
+  return clients.find(client => matches(client.phone) || matches(client.phone2) ||
+    (Array.isArray(client.phones) && client.phones.some(matches)));
+}
+
+function catalogReply(catalog, phone, intent) {
+  const products = Array.isArray(catalog.products) ? catalog.products : [];
+  const clients = Array.isArray(catalog.clients) ? catalog.clients : [];
+  const client = findClient(clients, phone);
+  const tier = String(client?.type || client?.clientType || 'B').toUpperCase() === 'VIP' ? 'VIP' : 'B';
+  if (!products.length) return 'قائمة المنتجات مش متاحة حاليًا. برجاء التواصل مع خدمة العملاء.';
+  const lines = products.slice(0, 15).map(p => {
+    const prices = tier === 'VIP' ? p.pricesVIP : p.pricesB;
+    const available = Object.entries(prices || {}).filter(([qty, price]) =>
+      /^\d+$/.test(qty) && Number(price) > 0).sort((a,b) => Number(a[0])-Number(b[0]));
+    const priceText = available.map(([qty,price]) => `${qty}: ${price} ج`).join(' | ');
+    return `${p.name || 'منتج'} (كود ${p.id}) — ${priceText || 'السعر عند خدمة العملاء'}`;
+  });
+  const heading = intent === 'order' ? 'اختار المنتج من القائمة وابعت كوده:' : 'الأسعار المتاحة حسب فئة حسابك:';
+  return [heading, ...lines, 'للطلب ابعت: المنتج: الكود، ثم الكمية: 1000، واسم الشغل: الاسم، وملف PDF. الأسعار النهائية يراجعها الموظف.'].join('\n');
+}
+
+function replyForMessage(message, draft, catalog) {
   const text = (message.text_body || '').trim();
   const normalized = text.replace(/[أإآ]/g, 'ا').toLowerCase();
   if (/^(?:الغاء|إلغاء|cancel)$/.test(normalized)) {
@@ -28,7 +55,7 @@ function replyForMessage(message, draft) {
     return 'من فضلك ابعت رقم الأوردر لمتابعته. هنتأكد من ملكية الطلب قبل عرض حالته.';
   }
   if (/^(?:سعر|اسعار|الاسعار|الأسعار|price)$/.test(normalized)) {
-    return 'لمعرفة السعر الصحيح حسب نوع حسابك، ابعت اسم المنتج والكمية المطلوبة. هنراجع أسعار المروة المسجلة قبل تأكيد أي سعر.';
+    return catalogReply(catalog, message.wa_id, 'price');
   }
   if (/^(?:طلب|طلب جديد|اوردر|أوردر|new)$/.test(normalized)) {
     return 'لتسجيل طلب جديد، ابعت بيانات الشغل بالترتيب:\\nاسم الشغل: ...\\nالمنتج: كود المنتج\\nالكمية: 1000\\nوبعدها ارفع ملف التصميم PDF. الطلب يفضل مسودة لحد مراجعة الموظف.';
@@ -204,7 +231,11 @@ export default async function handler(req, res) {
       }
       // Reply only to newly saved inbound text messages; duplicates never trigger another send.
       if (message.message_type === 'text') {
-        await sendReply(message.wa_id, replyForMessage(message, merged.status === 'pending_review' ? merged : { ...merged, status: patch.status }));
+        const { data: catalogRow, error: catalogReadError } = await db.from('app_data')
+          .select('data').eq('id', 1).single();
+        if (catalogReadError) console.error('WhatsApp catalog read failed', { code: catalogReadError.code });
+        await sendReply(message.wa_id, replyForMessage(message,
+          { ...merged, status: patch.status || merged.status }, catalogRow?.data || {}));
       }
     }
   }
