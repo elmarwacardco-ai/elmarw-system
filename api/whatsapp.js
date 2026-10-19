@@ -229,13 +229,20 @@ export default async function handler(req, res) {
         console.error('WhatsApp draft message link failed',{code:linkError.code});
         return res.status(503).json({error:'Draft link unavailable'});
       }
-      // Reply only to newly saved inbound text messages; duplicates never trigger another send.
+      // Persist reply before delivery. The sender retries failed attempts.
       if (message.message_type === 'text') {
         const { data: catalogRow, error: catalogReadError } = await db.from('app_data')
           .select('data').eq('id', 1).single();
         if (catalogReadError) console.error('WhatsApp catalog read failed', { code: catalogReadError.code });
-        await sendReply(message.wa_id, replyForMessage(message,
-          { ...merged, status: patch.status || merged.status }, catalogRow?.data || {}));
+        const replyBody = replyForMessage(message,
+          { ...merged, status: patch.status || merged.status }, catalogRow?.data || {});
+        const { error: queueError } = await db.from('whatsapp_outbound_messages')
+          .upsert({ inbound_message_id: message.message_id, wa_id: message.wa_id,
+            body: replyBody, status: 'pending' }, { onConflict: 'inbound_message_id', ignoreDuplicates: true });
+        if (queueError) {
+          console.error('WhatsApp reply queue failed', { code: queueError.code });
+          return res.status(503).json({ error: 'Reply queue unavailable' });
+        }
       }
     }
   }
