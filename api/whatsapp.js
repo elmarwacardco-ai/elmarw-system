@@ -26,7 +26,7 @@ async function sendWelcome(to) {
     const response = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(phoneId)}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: 'أهلًا بيك في مطابع المروة 🌟\\nنقدر نساعدك في معرفة الأسعار، تقديم طلب جديد، أو متابعة طلب سابق.' } }),
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: 'أهلًا بيك في مطابع المروة 🌟\nنقدر نساعدك في معرفة الأسعار، تقديم طلب جديد، أو متابعة طلب سابق.' } }),
       signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) {
