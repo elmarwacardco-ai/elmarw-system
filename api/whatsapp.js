@@ -58,7 +58,7 @@ function replyForMessage(message, draft, catalog) {
     return catalogReply(catalog, message.wa_id, 'price');
   }
   if (/^(?:طلب|طلب جديد|اوردر|أوردر|new)$/.test(normalized)) {
-    return 'لتسجيل طلب جديد، ابعت بيانات الشغل بالترتيب:\\nاسم الشغل: ...\\nالمنتج: كود المنتج\\nالكمية: 1000\\nوبعدها ارفع ملف التصميم PDF. الطلب يفضل مسودة لحد مراجعة الموظف.';
+    return catalogReply(catalog, message.wa_id, 'order');
   }
   if (draft?.status === 'pending_review') {
     return 'تم استلام بيانات طلبك كمسودة للمراجعة. الموظف هيراجع الملف ويحدد موعد التسليم قبل إصدار رقم الأوردر الرسمي.';
