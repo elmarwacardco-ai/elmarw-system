@@ -15,7 +15,37 @@ async function readRaw(req) {
 }
 
 
-async function sendWelcome(to) {
+function replyForMessage(message, draft) {
+  const text = (message.text_body || '').trim();
+  const normalized = text.replace(/[أإآ]/g, 'ا').toLowerCase();
+  if (/^(?:الغاء|إلغاء|cancel)$/.test(normalized)) {
+    return 'لإلغاء طلب، برجاء التواصل مع خدمة العملاء. لا يتم إلغاء أي طلب تلقائيًا.';
+  }
+  if (/^(?:موظف|شخص|خدمة العملاء|تحدث مع شخص)$/.test(normalized)) {
+    return 'برجاء التواصل مع خدمة العملاء، ويسعدنا مساعدتك.';
+  }
+  if (/^(?:حالة|متابعة|متابعه|طلب سابق|حالة الطلب)$/.test(normalized)) {
+    return 'من فضلك ابعت رقم الأوردر لمتابعته. هنتأكد من ملكية الطلب قبل عرض حالته.';
+  }
+  if (/^(?:سعر|اسعار|الاسعار|الأسعار|price)$/.test(normalized)) {
+    return 'لمعرفة السعر الصحيح حسب نوع حسابك، ابعت اسم المنتج والكمية المطلوبة. هنراجع أسعار المروة المسجلة قبل تأكيد أي سعر.';
+  }
+  if (/^(?:طلب|طلب جديد|اوردر|أوردر|new)$/.test(normalized)) {
+    return 'لتسجيل طلب جديد، ابعت بيانات الشغل بالترتيب:\\nاسم الشغل: ...\\nالمنتج: كود المنتج\\nالكمية: 1000\\nوبعدها ارفع ملف التصميم PDF. الطلب يفضل مسودة لحد مراجعة الموظف.';
+  }
+  if (draft?.status === 'pending_review') {
+    return 'تم استلام بيانات طلبك كمسودة للمراجعة. الموظف هيراجع الملف ويحدد موعد التسليم قبل إصدار رقم الأوردر الرسمي.';
+  }
+  if (draft?.job_name && draft?.product_id && draft?.quantity && !draft?.pdf_media_id) {
+    return 'باقي ملف التصميم PDF علشان نقدر نحول الطلب للمراجعة.';
+  }
+  if (/^(?:اسم\\s*الشغل|المنتج|منتج|الكمية|كمية)\\s*[:：-]/.test(text)) {
+    return 'تم تسجيل البيانات المتاحة. للتكملة ابعت اسم الشغل، كود المنتج، الكمية، وملف PDF. مش هنصدر رقم أوردر قبل مراجعة الموظف.';
+  }
+  return 'أهلًا بيك في مطابع المروة 🌟\\nاختار الخدمة بكتابة:\\n1- أسعار (اكتب: أسعار)\\n2- طلب جديد (اكتب: طلب جديد)\\n3- متابعة طلب (اكتب: متابعة)\\n4- خدمة العملاء (اكتب: موظف)';
+}
+
+async function sendReply(to, body) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!token || !phoneId) {
@@ -26,7 +56,7 @@ async function sendWelcome(to) {
     const response = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(phoneId)}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: 'أهلًا بيك في مطابع المروة 🌟\nنقدر نساعدك في معرفة الأسعار، تقديم طلب جديد، أو متابعة طلب سابق.' } }),
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }),
       signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) {
@@ -174,7 +204,7 @@ export default async function handler(req, res) {
       }
       // Reply only to newly saved inbound text messages; duplicates never trigger another send.
       if (message.message_type === 'text') {
-        await sendWelcome(message.wa_id);
+        await sendReply(message.wa_id, replyForMessage(message, merged.status === 'pending_review' ? merged : { ...merged, status: patch.status }));
       }
     }
   }
