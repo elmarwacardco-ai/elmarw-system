@@ -173,7 +173,36 @@ export default async function handler(req, res) {
       console.error('WhatsApp message insert failed', { code: messageError.code });
       return res.status(503).json({ error: 'Inbound message persistence unavailable' });
     }
-    if (!messageError) {
+    // A retried webhook can arrive after the inbound row was saved but before
+    // its reply was queued. Resume the reply without creating another draft.
+    if (messageError?.code === '23505') {
+      if (message.message_type === 'text') {
+        const { data: existing, error: existingError } = await db
+          .from('whatsapp_inbound_messages')
+          .select('draft_id').eq('message_id', message.message_id).single();
+        if (existingError) return res.status(503).json({ error: 'Inbound recovery unavailable' });
+        // An unlinked message needs normal draft processing below.
+        if (existing?.draft_id) {
+          const { data: existingDraft, error: draftReadError } = await db
+            .from('whatsapp_order_drafts')
+            .select('status,job_name,product_id,quantity,pdf_media_id')
+            .eq('id', existing.draft_id).maybeSingle();
+          if (draftReadError) return res.status(503).json({ error: 'Draft recovery unavailable' });
+          const { data: catalogRow, error: catalogError } = await db
+            .from('app_data').select('data').eq('id', 1).maybeSingle();
+          if (catalogError) console.error('WhatsApp recovery catalog read failed', { code: catalogError.code });
+          const { error: queueError } = await db.from('whatsapp_outbound_messages')
+            .upsert({ inbound_message_id: message.message_id, wa_id: message.wa_id,
+              body: replyForMessage(message, existingDraft, catalogRow?.data || {}),
+              status: 'pending' }, { onConflict: 'inbound_message_id', ignoreDuplicates: true });
+          if (queueError) return res.status(503).json({ error: 'Reply recovery unavailable' });
+          continue;
+        }
+      } else {
+        continue;
+      }
+    }
+    if (!messageError || messageError.code === '23505') {
       // Keep one collecting draft per WhatsApp sender; do not create official orders.
       const { data:openDraft, error:lookupError } = await db.from('whatsapp_order_drafts')
         .select('id,job_name,product_id,quantity,pdf_media_id')
