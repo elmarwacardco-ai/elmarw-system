@@ -97,6 +97,27 @@ async function sendReply(to, body) {
   }
 }
 
+async function deliverQueuedReply(db, messageId) {
+  const { data: row, error } = await db.from('whatsapp_outbound_messages')
+    .select('wa_id,body,attempts').eq('inbound_message_id', messageId)
+    .eq('status', 'pending').maybeSingle();
+  if (error || !row) return;
+  const { data: claimed, error: claimError } = await db.from('whatsapp_outbound_messages')
+    .update({ status: 'sending', attempts: (row.attempts || 0) + 1,
+      lease_until: new Date(Date.now() + 60000).toISOString() })
+    .eq('inbound_message_id', messageId).eq('status', 'pending')
+    .select('inbound_message_id');
+  if (claimError || !claimed?.length) return;
+  const delivered = await sendReply(row.wa_id, row.body);
+  const update = delivered
+    ? { status: 'sent', sent_at: new Date().toISOString(), lease_until: null, last_error: null }
+    : { status: 'failed', lease_until: null, last_error: 'Direct webhook send failed',
+        next_attempt_at: new Date(Date.now() + 30000).toISOString() };
+  const { error: updateError } = await db.from('whatsapp_outbound_messages')
+    .update(update).eq('inbound_message_id', messageId).eq('status', 'sending');
+  if (updateError) console.error('WhatsApp delivery status update failed', { code: updateError.code });
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'GET') {
@@ -196,6 +217,7 @@ export default async function handler(req, res) {
               body: replyForMessage(message, existingDraft, catalogRow?.data || {}),
               status: 'pending' }, { onConflict: 'inbound_message_id', ignoreDuplicates: true });
           if (queueError) return res.status(503).json({ error: 'Reply recovery unavailable' });
+          await deliverQueuedReply(db, message.message_id);
           continue;
         }
       } else {
@@ -272,6 +294,7 @@ export default async function handler(req, res) {
           console.error('WhatsApp reply queue failed', { code: queueError.code });
           return res.status(503).json({ error: 'Reply queue unavailable' });
         }
+        await deliverQueuedReply(db, message.message_id);
       }
     }
   }
