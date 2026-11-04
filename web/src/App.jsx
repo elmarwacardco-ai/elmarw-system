@@ -295,19 +295,16 @@ export default function App() {
     }catch(e){setWebsiteDraftError(e.message);window.alert(e.message)}
   }
   const approveWebsiteDraft=async(id)=>{
-    const deliveryDate=window.prompt('اكتب تاريخ التسليم بصيغة YYYY-MM-DD');
-    if(!deliveryDate)return;
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)){setWebsiteDraftError('اكتب التاريخ بصيغة YYYY-MM-DD');return}
-    if(!window.confirm('تأكيد اعتماد المسودة وإصدار أوردر رسمي؟'))return;
+    if(!window.confirm('اعتماد المسودة وتحويلها إلى أوردر رسمي؟ بعد الاعتماد تقدر تغير الحالة وتضيف الدفعات وتنقله لفولدر.'))return;
     setWebsiteDraftError('');
     try{
       const token=sessionStorage.getItem(TOKEN_KEY)||'';
-      const response=await fetch('/api/website-chat-drafts.js?action=approve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:id,deliveryDate})});
+      const response=await fetch('/api/website-chat-drafts.js?action=approve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:id})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||'تعذر اعتماد المسودة');
-      window.alert('تم اعتماد الطلب. كود الأوردر: '+result.serial);
-      await loadWebsiteDrafts();
-    }catch(e){setWebsiteDraftError(e.message)}
+      await Promise.all([loadWebsiteDrafts(),loadAll(token)]);
+      window.alert('تم اعتماد الأوردر بكود '+result.serial+' ✅\\nهتلاقيه في أوردرات جديد وتقدر تعدل حالته وتضيف دفعة وتنقله لفولدر.');
+    }catch(e){setWebsiteDraftError(e.message);window.alert('فشل الاعتماد: '+e.message)}
   }
   const openWebsiteDraftFile=async(id,kind)=>{
     setWebsiteDraftError('')
@@ -782,18 +779,18 @@ const BotDraftCard=({d})=>{const [draftMethod,setDraftMethod]=useState(d.payment
   <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,190px),1fr))',gap:9,fontSize:12}}>
     <div style={{padding:11,background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📦 المنتج والكمية</div><b>{products.find(p=>String(p.id)===String(d.product_id))?.name||'منتج غير معروف'}</b><div>{d.quantity} نسخة</div><div style={{color:'#64748b',fontSize:10,marginTop:6}}>رقم المسودة: <span dir="ltr" style={{overflowWrap:'anywhere'}}>{d.id}</span></div></div>
     <div style={{padding:11,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>💰 الدفع الحالي</div><b style={{color:'#15803d'}}>0 ج مؤكد</b><div>المبلغ المطلوب: {d.quoted_price} ج</div><div>{d.payment_method||'لم تُحدد طريقة الدفع'} • بانتظار التحقق</div></div>
-    <div style={{padding:11,background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📅 المواعيد</div><div>تاريخ الإرسال: {new Date(d.created_at).toLocaleDateString('ar-EG')}</div><div>موعد التسليم: يحدده الموظف</div></div>
+    <div style={{padding:11,background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📅 المواعيد</div><div>تاريخ الإرسال: {new Date(d.created_at).toLocaleDateString('ar-EG')}</div><div>موعد التسليم: يحدد بعد الاعتماد</div></div>
     <div style={{padding:11,background:'#fffbeb',border:'1px solid #fde68a',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📎 ملفات العميل</div><div style={{overflowWrap:'anywhere'}}>{d.pdf_filename||'ملف تصميم'}</div><button style={{...btnStyle,width:'100%',background:'#2563eb',color:'white',margin:'7px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>⬇️ فتح التصميم</button>{d.payment_receipt_filename&&<button style={{...btnStyle,width:'100%',background:'#dcfce7',color:'#166534',margin:'6px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'receipt')}>🧾 عرض إيصال التحويل</button>}</div>
   </div>
   <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:9,background:'#f8fafc',borderTop:'1px solid #e2e8f0'}}>
-    <div><label style={{fontSize:12,fontWeight:800}}>🔄 الحالة الجديدة</label><select value="pending" disabled style={{...inputStyle,margin:'5px 0 0',width:'100%',background:'#f1f5f9'}}><option value="pending">جديد — بانتظار اعتماد الموظف</option></select><small style={{color:'#64748b'}}>تغيير مراحل التنفيذ متاح بعد اعتماد الأوردر رسميًا.</small></div>
+    <div><label style={{fontSize:12,fontWeight:800}}>🔄 الحالة الجديدة</label><select value="pending" disabled style={{...inputStyle,margin:'5px 0 0',width:'100%',background:'#f1f5f9'}}><option value="pending">جديد — بانتظار اعتماد الموظف</option></select><small style={{color:'#64748b'}}>بعد الاعتماد يظهر الأوردر بنفس أدوات الأوردر العادي.</small></div>
     <div><label style={{fontSize:12,fontWeight:800}}>💰 إضافة دفعة جديدة (المتبقي {d.quoted_price} ج)</label><input disabled placeholder="يُفعّل بعد الاعتماد والتحقق من التحويل" style={{...inputStyle,margin:'5px 0 0',width:'100%',background:'#f1f5f9'}}/><small style={{color:'#64748b'}}>صورة التحويل لا تعني تسجيل مبلغ مدفوع.</small></div>
     <div><label style={{fontSize:12,fontWeight:800}}>💳 طريقة الدفع</label><select value={draftMethod} onChange={e=>setDraftMethod(e.target.value)} style={{...inputStyle,margin:'5px 0 0',width:'100%'}}>{['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].map(m=><option key={m} value={m}>{m}</option>)}</select><button style={{...btnStyle,background:'#2563eb',color:'white',margin:'7px 0 0',width:'100%'}} onClick={()=>saveWebsiteDraftMethod(d.id,draftMethod)}>💾 حفظ طريقة الدفع</button></div>
   </div>
   <div style={{padding:'9px 12px',display:'flex',alignItems:'center',gap:8,background:'#f8fafc',borderTop:'1px solid #e2e8f0',flexWrap:'wrap'}}><span style={{fontSize:12,fontWeight:700,color:'#475569'}}>📁 مكان الأوردر: بدون فولدر</span><select disabled value="" style={{...inputStyle,maxWidth:210,margin:0,background:'#f1f5f9'}}><option value="">نقل إلى فولدر بعد الاعتماد</option></select></div>
   <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',background:'#f8fafc',display:'flex',gap:9,alignItems:'center',flexWrap:'wrap'}}>
     <span style={{fontSize:12,color:'#475569'}}>🔄 الحالة: جديد — مسودة غير معتمدة</span>
-    <button style={{...btnStyle,background:'#16a34a',color:'white',margin:'0 0 0 auto',fontWeight:800}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر وتحديد موعد التسليم</button>
+    <button style={{...btnStyle,background:'#16a34a',color:'white',margin:'0 0 0 auto',fontWeight:800}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر</button>
   </div>
 </article>}
     const filteredClients = clients.filter(c=>!clientSearch || c.name.includes(clientSearch) || c.phone.includes(clientSearch))
