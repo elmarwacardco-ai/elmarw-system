@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 const API = '/api/index.js?resource='
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -23,6 +23,8 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
+  const messageListRef = useRef(null)
+  useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open])
   const submitDraft = async () => {
     if(!draft.pdf || !loggedClient)return
     setDraftSubmitting(true);setDraftError('')
@@ -54,8 +56,19 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
     let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
-    if (/سعر|اسعار|أسعار|تكلف|بكام/.test(normalized)) {
-      answer = 'الأسعار بتختلف حسب المنتج والكمية وفئة العميل (VIP أو B). افتح القسم والمنتج علشان تشوف الأسعار المتاحة لحسابك.'
+    if (/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)) {
+      const tier = loggedClient?.type === 'VIP' ? 'VIP' : 'B'
+      const priced = (products||[]).map(p=>{
+        let table=tier==='VIP'?p.pricesVIP:p.pricesB
+        try{if(typeof table==='string')table=JSON.parse(table)}catch{table={}}
+        const entries=Object.entries(table||{}).filter(([qty,price])=>/^\\d+$/.test(qty)&&Number(price)>0).sort((a,b)=>Number(a[0])-Number(b[0]))
+        return {name:p.name,entries}
+      }).filter(p=>p.name&&p.entries.length)
+      const found=priced.filter(p=>normalized.includes(String(p.name).toLocaleLowerCase('ar'))).slice(0,5)
+      const list=found.length?found:priced.slice(0,5)
+      answer=loggedClient
+        ? (list.length?'أسعار فئة '+tier+' حسب الكمية:\\n'+list.map(p=>p.name+': '+p.entries.slice(0,5).map(([qty,price])=>qty+' نسخة = '+price+' ج.م').join(' | ')).join('\\n')+'\\nلو عايز منتج معين اكتب اسمه.':'مفيش أسعار منشورة حاليًا للمنتجات المتاحة.')
+        : 'علشان أعرض سعر فئتك VIP أو B بشكل صحيح، سجّل دخول العميل. تقدر كمان تفتح الأقسام وتشوف المنتجات المتاحة.'
     } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized) && /حالة|متابع|فين|وصل/.test(normalized)) {
       answer = loggedClient ? 'تقدر تراجع حالة طلباتك من صفحة «طلباتي». اضغط زر «عرض طلباتي» تحت.' : 'لمتابعة طلبك، سجل دخولك الأول وبعدها افتح «طلباتي». مش هنعرض بيانات طلب من غير تسجيل دخول.'
     } else if (/pdf|ملف|ارفع|تصميم/.test(normalized)) {
@@ -74,7 +87,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   return <div dir="rtl" style={{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
     {open && <section role="dialog" aria-label="مساعد المروة" style={{width:'min(350px, calc(100vw - 36px))',height:'min(480px, 70vh)',background:'white',borderRadius:16,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:10,border:'1px solid #dbeafe'}}>
       <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة</strong><button type="button" onClick={()=>setOpen(false)} aria-label="إغلاق المحادثة" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>×</button></header>
-      <div aria-live="polite" style={{flex:1,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
+      <div ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
         {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
       </div>
       {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
