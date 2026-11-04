@@ -15,9 +15,10 @@ async function apiRead(resource, token) {
 }
 
 
-function SiteChatAssistant({ products, categories, subCategories, loggedClient, onMyOrders }) {
+function SiteChatAssistant({ products, categories, subCategories, loggedClient, onMyOrders, onRegister, onLogin }) {
   const [open, setOpen] = useState(false)
   const [draftStep, setDraftStep] = useState('')
+  const [welcomeStep,setWelcomeStep]=useState('')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
@@ -40,6 +41,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     }catch(e){setDraftError(e.message)}finally{setDraftSubmitting(false)}
   }
   const beginDraft = () => {
+    if(!loggedClient){setWelcomeStep('ask');return}
     setDraft({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
     setDraftStep(loggedClient ? 'category' : 'login')
   }
@@ -57,6 +59,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const normalized = q.toLocaleLowerCase('ar')
     let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
     if (/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)) {
+      if(!loggedClient){setWelcomeStep('ask')}
       const tier = loggedClient?.type === 'VIP' ? 'VIP' : 'B'
       const priced = (products||[]).map(p=>{
         let table=tier==='VIP'?p.pricesVIP:p.pricesB
@@ -68,7 +71,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const list=found.length?found:priced.slice(0,5)
       answer=loggedClient
         ? (list.length?'أسعار فئة '+tier+' حسب الكمية:\n'+list.map(p=>p.name+': '+p.entries.slice(0,5).map(([qty,price])=>qty+' نسخة = '+price+' ج.م').join(' | ')).join('\n')+'\nلو عايز منتج معين اكتب اسمه.':'مفيش أسعار منشورة حاليًا للمنتجات المتاحة.')
-        : 'علشان أعرض سعر فئتك VIP أو B بشكل صحيح، سجّل دخول العميل. تقدر كمان تفتح الأقسام وتشوف المنتجات المتاحة.'
+        : 'أهلاً بيك 👋 هل دي أول مرة تتعامل مع المروة؟ اختار من الزرين تحت علشان نكمل معاك.'
     } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized) && /حالة|متابع|فين|وصل/.test(normalized)) {
       answer = loggedClient ? 'تقدر تراجع حالة طلباتك من صفحة «طلباتي». اضغط زر «عرض طلباتي» تحت.' : 'لمتابعة طلبك، سجل دخولك الأول وبعدها افتح «طلباتي». مش هنعرض بيانات طلب من غير تسجيل دخول.'
     } else if (/pdf|ملف|ارفع|تصميم/.test(normalized)) {
@@ -90,6 +93,14 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       <div ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
         {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
       </div>
+      {!loggedClient && welcomeStep==='ask' && <div style={{padding:12,borderTop:'1px solid #e2e8f0',background:'#f8fafc'}}>
+        <strong>👋 هل دي أول مرة تتعامل مع المروة؟</strong>
+        <p style={{fontSize:12,margin:'6px 0'}}>لو أول مرة هنسجلك عميل جديد فئة B. ولو اتعاملت قبل كده، سجّل دخولك علشان نعرض أسعار فئتك.</p>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button type="button" onClick={()=>{setWelcomeStep('');onRegister()}} style={{padding:'9px 12px',border:0,borderRadius:9,background:'#16a34a',color:'white',cursor:'pointer'}}>أول مرة — تسجيل جديد</button>
+          <button type="button" onClick={()=>{setWelcomeStep('');onLogin()}} style={{padding:'9px 12px',border:0,borderRadius:9,background:'#1e3a8a',color:'white',cursor:'pointer'}}>اتعاملت قبل كده — دخول</button>
+        </div>
+      </div>}
       {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
         {draftStep==='login' && <p>سجّل دخول العميل أولاً علشان نستخدم فئتك السعرية ونحافظ على خصوصية طلباتك.</p>}
@@ -790,7 +801,7 @@ export default function App() {
         {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><input aria-label="بحث في منتجات القسم" placeholder="🔎 ابحث عن منتج بالاسم" value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)} style={{width:'100%',maxWidth:440,padding:'12px 14px',border:'1px solid #cbd5e1',borderRadius:10,marginBottom:12,boxSizing:'border-box',fontSize:15}} /><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
       </div>
 
-      {!showAdmin && <SiteChatAssistant products={products} categories={categories} subCategories={subCategories} loggedClient={loggedClient} onMyOrders={()=>setShowMyOrders(true)} />}
+      {!showAdmin && <SiteChatAssistant products={products} categories={categories} subCategories={subCategories} loggedClient={loggedClient} onMyOrders={()=>setShowMyOrders(true)} onRegister={()=>setShowForm(true)} onLogin={()=>setShowLogin(true)} />}
       {showMyOrders && <div style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.85)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:400, padding:'10px'}}>
         <div style={{background:'white', width:'95%', maxWidth:'900px', maxHeight:'92vh', borderRadius:'16px', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px rgba(0,0,0,0.4)'}}>
           <div style={{background:'#0f172a', color:'white', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, zIndex:20}}><div style={{fontWeight:900}}>📦 طلباتي - {loggedClient?.name} | مطبعة المروة</div><button onClick={()=> setShowMyOrders(false)} style={{background:'white', color:'#0f172a', border:'none', padding:'7px 16px', fontWeight:900, cursor:'pointer', borderRadius:'20px'}}>X اغلاق</button></div>
