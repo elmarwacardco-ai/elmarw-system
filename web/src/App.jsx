@@ -67,7 +67,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const found=priced.filter(p=>normalized.includes(String(p.name).toLocaleLowerCase('ar'))).slice(0,5)
       const list=found.length?found:priced.slice(0,5)
       answer=loggedClient
-        ? (list.length?'أسعار فئة '+tier+' حسب الكمية:\\n'+list.map(p=>p.name+': '+p.entries.slice(0,5).map(([qty,price])=>qty+' نسخة = '+price+' ج.م').join(' | ')).join('\\n')+'\\nلو عايز منتج معين اكتب اسمه.':'مفيش أسعار منشورة حاليًا للمنتجات المتاحة.')
+        ? (list.length?'أسعار فئة '+tier+' حسب الكمية:\n'+list.map(p=>p.name+': '+p.entries.slice(0,5).map(([qty,price])=>qty+' نسخة = '+price+' ج.م').join(' | ')).join('\n')+'\nلو عايز منتج معين اكتب اسمه.':'مفيش أسعار منشورة حاليًا للمنتجات المتاحة.')
         : 'علشان أعرض سعر فئتك VIP أو B بشكل صحيح، سجّل دخول العميل. تقدر كمان تفتح الأقسام وتشوف المنتجات المتاحة.'
     } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized) && /حالة|متابع|فين|وصل/.test(normalized)) {
       answer = loggedClient ? 'تقدر تراجع حالة طلباتك من صفحة «طلباتي». اضغط زر «عرض طلباتي» تحت.' : 'لمتابعة طلبك، سجل دخولك الأول وبعدها افتح «طلباتي». مش هنعرض بيانات طلب من غير تسجيل دخول.'
