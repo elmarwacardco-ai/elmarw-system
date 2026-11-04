@@ -759,6 +759,26 @@ export default function App() {
   }
 
   if(showAdmin){
+const BotDraftCard=({d})=><article className="admin-order-card" style={{background:'#fff',border:'1px solid #dbe3ef',borderRight:'6px solid #2563eb',borderRadius:14,marginBottom:10,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
+  <div style={{background:'#dbeafe',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap',borderBottom:'1px solid #bfdbfe'}}>
+    <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+      <b style={{fontSize:13}}>👤 الشغل: {d.job_name}</b>
+      <span style={{background:'#1d4ed8',color:'white',padding:'4px 9px',borderRadius:9,fontWeight:800,fontSize:11}}>🤖 طلب بوت شات</span>
+      <span style={{background:'#fef3c7',color:'#92400e',padding:'4px 9px',borderRadius:9,fontWeight:800,fontSize:11}}>جديد • بانتظار المراجعة</span>
+    </div>
+    <b style={{color:'#166534'}}>{d.quoted_price} ج</b>
+  </div>
+  <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,190px),1fr))',gap:9,fontSize:12}}>
+    <div style={{padding:11,background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📦 المنتج والكمية</div><b>{products.find(p=>String(p.id)===String(d.product_id))?.name||'منتج غير معروف'}</b><div>{d.quantity} نسخة</div><div style={{color:'#64748b',fontSize:10,marginTop:6}}>رقم المسودة: <span dir="ltr" style={{overflowWrap:'anywhere'}}>{d.id}</span></div></div>
+    <div style={{padding:11,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>💰 الدفع الحالي</div><b style={{color:'#15803d'}}>0 ج مؤكد</b><div>المبلغ المطلوب: {d.quoted_price} ج</div><div>{d.payment_method||'لم تُحدد طريقة الدفع'} • بانتظار التحقق</div></div>
+    <div style={{padding:11,background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📅 المواعيد</div><div>تاريخ الإرسال: {new Date(d.created_at).toLocaleDateString('ar-EG')}</div><div>موعد التسليم: يحدده الموظف</div></div>
+    <div style={{padding:11,background:'#fffbeb',border:'1px solid #fde68a',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📎 ملفات العميل</div><div style={{overflowWrap:'anywhere'}}>{d.pdf_filename||'ملف تصميم'}</div><button style={{...btnStyle,width:'100%',background:'#2563eb',color:'white',margin:'7px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>⬇️ فتح التصميم</button>{d.payment_receipt_filename&&<button style={{...btnStyle,width:'100%',background:'#dcfce7',color:'#166534',margin:'6px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'receipt')}>🧾 عرض إيصال التحويل</button>}</div>
+  </div>
+  <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',background:'#f8fafc',display:'flex',gap:9,alignItems:'center',flexWrap:'wrap'}}>
+    <span style={{fontSize:12,color:'#475569'}}>🔄 الحالة: جديد — مسودة غير معتمدة</span>
+    <button style={{...btnStyle,background:'#16a34a',color:'white',margin:'0 0 0 auto',fontWeight:800}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر وتحديد موعد التسليم</button>
+  </div>
+</article>
     const filteredClients = clients.filter(c=>!clientSearch || c.name.includes(clientSearch) || c.phone.includes(clientSearch))
     const operationOrders = orders.filter(o=>!folders.some(f=> (f.orderIds||[]).map(String).includes(String(o.id))) && ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(o.status))
     const selectedFolder = folders.find(f=>String(f.id)===String(selectedFolderId))
@@ -835,32 +855,20 @@ export default function App() {
               <span style={{background:'#dbeafe',color:'#1e40af',padding:'8px 12px',borderRadius:'18px',fontWeight:900,fontSize:'12px'}}>{visibleDashboardOrders.length+((ordersStatusFilter==='جديد'||ordersStatusFilter==='الكل')?websiteDrafts.filter(d=>d.status==='pending_review'||d.status==='in_review').length:0)} طلب</span>
             </div>
             <div style={{background:'white',padding:'9px',borderRadius:'12px',marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>{orderStatuses.filter(s=>s!=='تم التسليم'&&s!=='ملغي').map(s=><button key={s} onClick={()=>setOrdersStatusFilter(s)} style={{...btnStyle,margin:0,padding:'7px 11px',fontSize:'11px',background:ordersStatusFilter===s?statusColor(s):'#e2e8f0',color:ordersStatusFilter===s?'white':'#334155'}}>{s}</button>)}</div>
-{adminTab==='orders' && (ordersStatusFilter==='جديد'||ordersStatusFilter==='الكل') && <section dir="rtl" style={{padding:16,background:'white',borderRadius:12,marginBottom:16}}>
-  <h2>🤖 طلبات البوت الجديدة ({websiteDrafts.filter(d=>d.status==='pending_review'||d.status==='in_review').length})</h2>
-  <p>الطلبات دي مسودات فقط. لا يتم اعتبارها أوردرات رسمية أو مدفوعة قبل مراجعة الموظف واعتمادها.</p>
-  <button style={btnStyle} disabled={websiteDraftLoading} onClick={loadWebsiteDrafts}>{websiteDraftLoading?'جاري التحميل...':'🔄 تحديث المسودات'}</button>
-  {websiteDraftError&&<p role="alert" style={{color:'#b91c1c',padding:10,background:'#fee2e2',borderRadius:8}}>{websiteDraftError}</p>}
-  {!websiteDraftLoading&&websiteDrafts.filter(d=>d.status==='pending_review'||d.status==='in_review').length===0&&<p>مفيش مسودات من بوت الموقع حاليًا.</p>}
-  <div style={{display:'grid',gap:12,marginTop:14}}>{websiteDrafts.filter(d=>(d.status==='pending_review'||d.status==='in_review')&&(!orderSearch||[d.job_name,d.id].join(' ').toLowerCase().includes(orderSearch.toLowerCase()))).map(d=><article key={d.id} style={{border:'1px solid #cbd5e1',borderRadius:12,padding:14,background:'#f8fafc'}}>
-    <div style={{fontWeight:700,marginBottom:8}}>📄 {d.job_name} — {products.find(p=>String(p.id)===String(d.product_id))?.name||'منتج'} ({d.quantity} نسخة)</div>
-    <div>رقم المسودة: <code>{d.id}</code></div>
-    <div>السعر المعروض: {d.quoted_price} جنيه</div>
-    <div>الحالة: {d.status==='pending_review'?'بانتظار مراجعة الموظف':d.status}</div>
-    <div>طريقة الدفع: {d.payment_method||'لم يحدد العميل بعد'} — <strong>غير مؤكدة</strong></div>
-    <div>تاريخ الإرسال: {new Date(d.created_at).toLocaleString('ar-EG')}</div>
-    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
-      {d.status==='pending_review'&&<button style={{...btnStyle,background:'#16a34a',color:'white'}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر وتحديد موعد التسليم</button>}<button style={btnStyle} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>📎 فتح التصميم: {d.pdf_filename}</button>
-      {d.payment_receipt_filename&&<button style={btnStyle} onClick={()=>openWebsiteDraftFile(d.id,'receipt')}>🧾 فتح الإيصال: {d.payment_receipt_filename}</button>}
-    </div>
-  </article>)}</div>
-</section>}
+{adminTab==='orders' && (ordersStatusFilter==='جديد'||ordersStatusFilter==='الكل') && <div style={{margin:'12px 0',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+  <span style={{fontSize:13,fontWeight:800,color:'#1e40af'}}>🤖 طلبات بوت الموقع بانتظار المراجعة: {websiteDrafts.filter(d=>d.status==='pending_review'||d.status==='in_review').length}</span>
+  <button style={{...btnStyle,margin:0,padding:'7px 12px'}} disabled={websiteDraftLoading} onClick={loadWebsiteDrafts}>{websiteDraftLoading?'جاري التحميل...':'🔄 تحديث طلبات البوت'}</button>
+  {websiteDraftError&&<span role="alert" style={{color:'#b91c1c'}}>{websiteDraftError}</span>}
+</div>}
                       <div style={{marginTop:'12px'}}>
               {(()=>{
+                const pendingBotDrafts=(ordersStatusFilter==='جديد'||ordersStatusFilter==='الكل')?websiteDrafts.filter(d=>(d.status==='pending_review'||d.status==='in_review')&&(!orderSearch||[d.job_name,d.id].join(' ').toLowerCase().includes(orderSearch.toLowerCase()))):[]
                 const filtered = visibleDashboardOrders.filter(o=>ordersStatusFilter==='الكل'||o.status===ordersStatusFilter)
-                const productGroups = products.map(p=>({product:p,list:filtered.filter(o=>safeItems(o).some(it=>String(it.productId)===String(p.id)))})).filter(g=>g.list.length)
+                const productGroups = products.map(p=>({product:p,list:filtered.filter(o=>safeItems(o).some(it=>String(it.productId)===String(p.id))),drafts:pendingBotDrafts.filter(d=>String(d.product_id)===String(p.id))})).filter(g=>g.list.length||g.drafts.length)
                 const usedIds = new Set(productGroups.flatMap(g=>g.list.map(o=>o.id)))
                 const others = filtered.filter(o=>!usedIds.has(o.id))
-                return <>{productGroups.map(({product,list})=><section key={product.id} style={{marginBottom:'18px'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#dbeafe',borderRight:'6px solid #2563eb',padding:'10px 13px',borderRadius:'10px 10px 0 0'}}><b style={{fontSize:'16px',color:'#1e3a8a'}}>🏷️ {product.name}</b><span style={{background:'#2563eb',color:'white',padding:'4px 10px',borderRadius:'15px',fontSize:'11px'}}>{list.length} أوردر</span></div><div style={{padding:'8px',background:'#f8fafc',border:'1px solid #dbeafe',borderTop:0,borderRadius:'0 0 10px 10px'}}>{list.sort((a,b)=>b.id-a.id).map(o=><OrderAdminCard key={`${product.id}-${o.id}`} o={o}/>)}</div></section>)}
+                return <>{productGroups.map(({product,list,drafts})=><section key={product.id} style={{marginBottom:'18px'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#dbeafe',borderRight:'6px solid #2563eb',padding:'10px 13px',borderRadius:'10px 10px 0 0'}}><b style={{fontSize:'16px',color:'#1e3a8a'}}>🏷️ {product.name}</b><span style={{background:'#2563eb',color:'white',padding:'4px 10px',borderRadius:'15px',fontSize:'11px'}}>{list.length+drafts.length} أوردر</span></div><div style={{padding:'8px',background:'#f8fafc',border:'1px solid #dbeafe',borderTop:0,borderRadius:'0 0 10px 10px'}}>{drafts.map(d=><BotDraftCard key={d.id} d={d}/>)}{list.sort((a,b)=>b.id-a.id).map(o=><OrderAdminCard key={`${product.id}-${o.id}`} o={o}/>)}</div></section>)}
+                {pendingBotDrafts.filter(d=>!products.some(p=>String(p.id)===String(d.product_id))).map(d=><BotDraftCard key={d.id} d={d}/>)}
                 {others.length>0&&<section><div style={{background:'#e5e7eb',borderRight:'6px solid #64748b',padding:'10px 13px',borderRadius:'10px 10px 0 0'}}><b>📦 أوردرات بدون منتج معروف</b><span style={{marginRight:'10px',fontSize:'11px'}}>({others.length})</span></div><div style={{padding:'8px',background:'#f8fafc'}}>{others.sort((a,b)=>b.id-a.id).map(o=><OrderAdminCard key={o.id} o={o}/>)}</div></section>}
                 {!filtered.length&&<div style={{background:'white',padding:'40px',textAlign:'center',borderRadius:'12px'}}>لا يوجد أوردرات رسمية مطابقة للبحث أو الفلتر</div>}
               </>})()}
