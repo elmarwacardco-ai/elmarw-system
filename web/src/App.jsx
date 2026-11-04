@@ -18,14 +18,14 @@ async function apiRead(resource, token) {
 function SiteChatAssistant({ products, categories, subCategories, loggedClient, onMyOrders, onRegister, onLogin }) {
   const [open, setOpen] = useState(false)
   const [draftStep, setDraftStep] = useState('')
-  const [welcomeStep,setWelcomeStep]=useState('')
+  const [welcomeStep,setWelcomeStep]=useState('ask')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
   const messageListRef = useRef(null)
-  useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open])
+  useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep])
   const submitDraft = async () => {
     if(!draft.pdf || !loggedClient)return
     setDraftSubmitting(true);setDraftError('')
@@ -57,6 +57,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const q = raw.trim()
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
+    if(!loggedClient && /السلام|سلام عليكم|صباح|مساء|اهلا|أهلا|مرحبا/.test(normalized)) setWelcomeStep('ask')
     let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
     if (/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)) {
       if(!loggedClient){setWelcomeStep('ask')}
@@ -92,15 +93,15 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة</strong><button type="button" onClick={()=>setOpen(false)} aria-label="إغلاق المحادثة" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>×</button></header>
       <div ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
         {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
+        {!loggedClient && welcomeStep==='ask' && <div style={{alignSelf:'stretch',padding:10,border:'1px solid #bfdbfe',borderRadius:12,background:'#eff6ff',fontSize:13}}>
+          <strong>👋 أهلاً بيك! هل دي أول مرة تتعامل مع المروة؟</strong>
+          <p style={{margin:'5px 0 9px'}}>اختار علشان نكمل معاك ونعرض الأسعار المناسبة.</p>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            <button type="button" onClick={()=>{setWelcomeStep('');onRegister()}} style={{padding:'8px 10px',border:0,borderRadius:8,background:'#16a34a',color:'white',cursor:'pointer'}}>أول مرة — تسجيل جديد</button>
+            <button type="button" onClick={()=>{setWelcomeStep('');onLogin()}} style={{padding:'8px 10px',border:0,borderRadius:8,background:'#1e3a8a',color:'white',cursor:'pointer'}}>عميل سابق — دخول</button>
+          </div>
+        </div>}
       </div>
-      {!loggedClient && welcomeStep==='ask' && <div style={{padding:12,borderTop:'1px solid #e2e8f0',background:'#f8fafc'}}>
-        <strong>👋 هل دي أول مرة تتعامل مع المروة؟</strong>
-        <p style={{fontSize:12,margin:'6px 0'}}>لو أول مرة هنسجلك عميل جديد فئة B. ولو اتعاملت قبل كده، سجّل دخولك علشان نعرض أسعار فئتك.</p>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          <button type="button" onClick={()=>{setWelcomeStep('');onRegister()}} style={{padding:'9px 12px',border:0,borderRadius:9,background:'#16a34a',color:'white',cursor:'pointer'}}>أول مرة — تسجيل جديد</button>
-          <button type="button" onClick={()=>{setWelcomeStep('');onLogin()}} style={{padding:'9px 12px',border:0,borderRadius:9,background:'#1e3a8a',color:'white',cursor:'pointer'}}>اتعاملت قبل كده — دخول</button>
-        </div>
-      </div>}
       {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
         {draftStep==='login' && <p>سجّل دخول العميل أولاً علشان نستخدم فئتك السعرية ونحافظ على خصوصية طلباتك.</p>}
