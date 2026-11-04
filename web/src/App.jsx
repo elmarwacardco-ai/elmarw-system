@@ -283,6 +283,17 @@ export default function App() {
       setWebsiteDrafts(result.drafts||[])
     }catch(e){setWebsiteDraftError(e.message)}finally{setWebsiteDraftLoading(false)}
   }
+  const saveWebsiteDraftMethod=async(id,method)=>{
+    setWebsiteDraftError('');
+    try{
+      const token=sessionStorage.getItem(TOKEN_KEY)||'';
+      const response=await fetch('/api/website-chat-drafts.js?action=review-update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:id,paymentMethod:method})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'تعذر حفظ طريقة الدفع');
+      setWebsiteDrafts(prev=>prev.map(d=>d.id===id?{...d,payment_method:result.paymentMethod}:d));
+      window.alert('تم حفظ طريقة الدفع للمسودة، ولم يتم تأكيد أي دفعة');
+    }catch(e){setWebsiteDraftError(e.message);window.alert(e.message)}
+  }
   const approveWebsiteDraft=async(id)=>{
     const deliveryDate=window.prompt('اكتب تاريخ التسليم بصيغة YYYY-MM-DD');
     if(!deliveryDate)return;
@@ -759,7 +770,7 @@ export default function App() {
   }
 
   if(showAdmin){
-const BotDraftCard=({d})=><article className="admin-order-card" style={{background:'#fff',border:'1px solid #dbe3ef',borderRight:'6px solid #2563eb',borderRadius:14,marginBottom:10,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
+const BotDraftCard=({d})=>{const [draftMethod,setDraftMethod]=useState(d.payment_method||'نقدي');useEffect(()=>setDraftMethod(d.payment_method||'نقدي'),[d.payment_method]);return <article className="admin-order-card" style={{background:'#fff',border:'1px solid #dbe3ef',borderRight:'6px solid #2563eb',borderRadius:14,marginBottom:10,overflow:'hidden',boxShadow:'0 3px 10px rgba(15,23,42,.06)'}}>
   <div style={{background:'#dbeafe',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap',borderBottom:'1px solid #bfdbfe'}}>
     <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
       <b style={{fontSize:13}}>👤 الشغل: {d.job_name}</b>
@@ -774,11 +785,17 @@ const BotDraftCard=({d})=><article className="admin-order-card" style={{backgrou
     <div style={{padding:11,background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📅 المواعيد</div><div>تاريخ الإرسال: {new Date(d.created_at).toLocaleDateString('ar-EG')}</div><div>موعد التسليم: يحدده الموظف</div></div>
     <div style={{padding:11,background:'#fffbeb',border:'1px solid #fde68a',borderRadius:9}}><div style={{color:'#64748b',fontSize:11}}>📎 ملفات العميل</div><div style={{overflowWrap:'anywhere'}}>{d.pdf_filename||'ملف تصميم'}</div><button style={{...btnStyle,width:'100%',background:'#2563eb',color:'white',margin:'7px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>⬇️ فتح التصميم</button>{d.payment_receipt_filename&&<button style={{...btnStyle,width:'100%',background:'#dcfce7',color:'#166534',margin:'6px 0 0'}} onClick={()=>openWebsiteDraftFile(d.id,'receipt')}>🧾 عرض إيصال التحويل</button>}</div>
   </div>
+  <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:9,background:'#f8fafc',borderTop:'1px solid #e2e8f0'}}>
+    <div><label style={{fontSize:12,fontWeight:800}}>🔄 الحالة الجديدة</label><select value="pending" disabled style={{...inputStyle,margin:'5px 0 0',width:'100%',background:'#f1f5f9'}}><option value="pending">جديد — بانتظار اعتماد الموظف</option></select><small style={{color:'#64748b'}}>تغيير مراحل التنفيذ متاح بعد اعتماد الأوردر رسميًا.</small></div>
+    <div><label style={{fontSize:12,fontWeight:800}}>💰 إضافة دفعة جديدة (المتبقي {d.quoted_price} ج)</label><input disabled placeholder="يُفعّل بعد الاعتماد والتحقق من التحويل" style={{...inputStyle,margin:'5px 0 0',width:'100%',background:'#f1f5f9'}}/><small style={{color:'#64748b'}}>صورة التحويل لا تعني تسجيل مبلغ مدفوع.</small></div>
+    <div><label style={{fontSize:12,fontWeight:800}}>💳 طريقة الدفع</label><select value={draftMethod} onChange={e=>setDraftMethod(e.target.value)} style={{...inputStyle,margin:'5px 0 0',width:'100%'}}>{['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].map(m=><option key={m} value={m}>{m}</option>)}</select><button style={{...btnStyle,background:'#2563eb',color:'white',margin:'7px 0 0',width:'100%'}} onClick={()=>saveWebsiteDraftMethod(d.id,draftMethod)}>💾 حفظ طريقة الدفع</button></div>
+  </div>
+  <div style={{padding:'9px 12px',display:'flex',alignItems:'center',gap:8,background:'#f8fafc',borderTop:'1px solid #e2e8f0',flexWrap:'wrap'}}><span style={{fontSize:12,fontWeight:700,color:'#475569'}}>📁 مكان الأوردر: بدون فولدر</span><select disabled value="" style={{...inputStyle,maxWidth:210,margin:0,background:'#f1f5f9'}}><option value="">نقل إلى فولدر بعد الاعتماد</option></select></div>
   <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',background:'#f8fafc',display:'flex',gap:9,alignItems:'center',flexWrap:'wrap'}}>
     <span style={{fontSize:12,color:'#475569'}}>🔄 الحالة: جديد — مسودة غير معتمدة</span>
     <button style={{...btnStyle,background:'#16a34a',color:'white',margin:'0 0 0 auto',fontWeight:800}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر وتحديد موعد التسليم</button>
   </div>
-</article>
+</article>}
     const filteredClients = clients.filter(c=>!clientSearch || c.name.includes(clientSearch) || c.phone.includes(clientSearch))
     const operationOrders = orders.filter(o=>!folders.some(f=> (f.orderIds||[]).map(String).includes(String(o.id))) && ['جديد','قيد التنفيذ','قيد الطباعة','جاهز للتسليم'].includes(o.status))
     const selectedFolder = folders.find(f=>String(f.id)===String(selectedFolderId))
