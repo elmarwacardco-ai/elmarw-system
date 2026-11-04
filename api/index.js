@@ -415,6 +415,25 @@ export default async function handler(req, res) {
       if(error)return res.status(400).json({error:error.message});
       return res.status(200).json(data);
     }
+    if (['POST','PUT'].includes(req.method) && key==='products') {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if(!token)return res.status(401).json({error:'سجل دخول المدير أولاً'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if(authError||!auth?.user)return res.status(401).json({error:'جلسة المدير غير صالحة'});
+      const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if(adminError||!admin)return res.status(403).json({error:'ليس لديك صلاحية حفظ المنتجات'});
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+      const name=String(body.name||'').trim(),subId=String(body.subCategoryId||'');
+      if(!name||name.length>120||!subId)return res.status(400).json({error:'ادخل اسم المنتج واختار القسم الفرعي'});
+      const normalizePrices=x=>{const result={};for(const [k,v] of Object.entries(x||{})){if(!/^\d+$/.test(k)||!Number.isFinite(Number(v))||Number(v)<0)throw new Error('قيمة سعر غير صحيحة');result[k]=Number(v)}return result};
+      const payload={name,image:String(body.image||''),subCategoryId:subId,pricesB:normalizePrices(body.pricesB),pricesVIP:normalizePrices(body.pricesVIP)};
+      const id=req.method==='PUT'?pathname.split('/')[3]:null;
+      if(req.method==='PUT'&&!id)return res.status(400).json({error:'رقم المنتج غير موجود'});
+      const {data,error}=await db.rpc('marwa_save_product',{p_product:payload,p_id:id});
+      if(error)return res.status(400).json({error:error.message});
+      return res.status(req.method==='POST'?201:200).json(data);
+    }
     // السماح بإضافة التصنيفات الرئيسية فقط
     if (req.method === 'POST' && key !== 'categories') {
       return res.status(405).json({
