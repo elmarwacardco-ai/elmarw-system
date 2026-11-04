@@ -26,7 +26,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 هساعدك خطوة بخطوة في الأسعار والطلبات.' }])
   const messageListRef = useRef(null)
-  useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep])
+  useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep,chatMode,draftStep,draft.categoryId,draft.subCategoryId,draft.productId])
   const submitDraft = async () => {
     if(!draft.pdf || !loggedClient)return
     setDraftSubmitting(true);setDraftError('')
@@ -109,8 +109,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
             <button type="button" onClick={()=>{setWelcomeStep('');setOpen(false);onLogin()}} style={{padding:'8px 10px',border:0,borderRadius:8,background:'#1e3a8a',color:'white',cursor:'pointer'}}>عميل سابق — دخول</button>
           </div>
         </div>}
-      </div>
-      {loggedClient && !draftStep && <div style={{padding:'8px 12px',borderTop:'1px solid #e2e8f0',overflowY:'auto',maxHeight:210,flexShrink:0,fontSize:13}}>
+      {loggedClient && !draftStep && <div style={{padding:'8px 12px',fontSize:13}}>
         {chatMode==='menu' && <><strong>أهلاً {loggedClient.name||'بيك'} 👋 تحب أساعدك في إيه؟</strong>{draftButton('💰 معرفة أسعار المنتجات',showPriceCategories)}{draftButton('🧾 طلب طباعة جديد',beginDraft)}{draftButton('📦 متابعة طلباتي',()=>{onMyOrders();setOpen(false)})}</>}
         {chatMode==='priceCategories' && <><strong>اختار القسم</strong>{categories.map(c=>draftButton(c.name,()=>showPriceSubcategories(c.id)))}</>}
         {chatMode==='priceSubcategories' && <><strong>اختار القسم الفرعي</strong>{subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>showPriceProducts(c.id)))}</>}
@@ -118,7 +117,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{setDraft(v=>({...v,quantity:String(q)}));setDraftStep('job');setMessages(prev=>[...prev,{from:'bot',text:'تم اختيار '+q+' نسخة من '+chosenProduct?.name+'. اكتب اسم الشغل علشان نكمل طلب الطباعة.'}])})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
         {chatMode!=='menu'&&draftButton('↩ رجوع للقائمة الرئيسية',showChatMenu)}
       </div>}
-      {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
+      {draftStep && <div style={{padding:'10px 12px',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
         {draftStep==='login' && <p>سجّل دخول العميل أولاً علشان نستخدم فئتك السعرية ونحافظ على خصوصية طلباتك.</p>}
         {draftStep==='category' && categories.map(c=>draftButton(c.name,()=>chooseDraft('categoryId',String(c.id),'subcategory')))}
@@ -130,6 +129,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>اضغط إرسال المسودة لرفع PDF وحفظ الطلب للمراجعة. لن يتم إصدار أوردر رسمي إلا بعد اعتماد الموظف.</p><button type="button" disabled={draftSubmitting} onClick={submitDraft} style={{background:'#16a34a',color:'white',padding:'10px 15px',border:0,borderRadius:9,cursor:'pointer'}}>{draftSubmitting?'جاري إرسال المسودة...':'إرسال المسودة للمراجعة'}</button>{draftError&&<p role="alert" style={{color:'#b91c1c'}}>{draftError}</p>}</div>}
         {draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
+      </div>
       <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
         {draftButton('➕ ابدأ طلب طباعة',beginDraft)}
         {['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
