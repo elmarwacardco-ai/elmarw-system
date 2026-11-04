@@ -134,6 +134,38 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       if(!found){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'مش لاقي '+label+' ده. اختار بالاسم أو الرقم من القائمة:\n'+chatOptions(items)}]);setQuestion('');return null}
       return found;
     };
+    // Allow customers to change category or choose a named subcategory/product at any selection step.
+    const selectionSteps=['category','subcategory','product'];
+    const selectionModes=['priceCategories','priceSubcategories','priceProducts'];
+    if(selectionSteps.includes(draftStep)||(!draftStep&&selectionModes.includes(chatMode))){
+      const clean=v=>normalizeName(v).replace(/^(قسم|اسعار|أسعار|سعر|عن)\\s+/g,'').replace(/\\s+/g,' ');
+      const query=clean(q);
+      const matching=(items)=>items.find(x=>clean(x.name)===query)||items.find(x=>query.length>=3&&(clean(x.name).includes(query)||query.includes(clean(x.name))));
+      const category=matching(categories);
+      const subcategory=matching(subCategories);
+      const product=matching(products);
+      const inDraft=Boolean(draftStep);
+      if(category && !(draftStep==='category'||chatMode==='priceCategories')){
+        const subs=subCategories.filter(x=>String(x.categoryId)===String(category.id));
+        const ps=chatProducts(category.id,'');
+        setDraft(v=>({...v,categoryId:String(category.id),subCategoryId:'',productId:'',quantity:''}));
+        if(inDraft)setDraftStep(subs.length?'subcategory':'product');else setChatMode(subs.length?'priceSubcategories':'priceProducts');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:(subs.length?'اختار القسم الفرعي:\\n'+chatOptions(subs):'اختار المنتج:\\n'+chatOptions(ps))}]);setQuestion('');return;
+      }
+      if(subcategory && String(subcategory.categoryId)!==String(draft.categoryId) || subcategory && (draftStep==='subcategory'||chatMode==='priceSubcategories') && String(subcategory.categoryId)===String(draft.categoryId)){
+        const ps=products.filter(p=>String(p.subCategoryId)===String(subcategory.id));
+        setDraft(v=>({...v,categoryId:String(subcategory.categoryId),subCategoryId:String(subcategory.id),productId:'',quantity:''}));
+        if(inDraft)setDraftStep('product');else setChatMode('priceProducts');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:ps.length?'اختار المنتج:\\n'+chatOptions(ps):'مفيش منتجات في القسم ده حاليًا. اكتب اسم قسم تاني.'}]);setQuestion('');return;
+      }
+      if(product && !(draftStep==='product'||chatMode==='priceProducts')){
+        const table=(()=>{try{const v=loggedClient?.type==='VIP'?product.pricesVIP:product.pricesB;return typeof v==='string'?JSON.parse(v):v||{}}catch{return {}}})();
+        const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
+        setDraft(v=>({...v,categoryId:String(product.categoryId||''),subCategoryId:String(product.subCategoryId||''),productId:String(product.id),quantity:''}));
+        if(inDraft)setDraftStep('quantity');else setChatMode('priceDetails');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية:\\n'+qty.map(n=>n+' نسخة').join('\\n'):'مفيش أسعار متاحة للمنتج ده.'}]);setQuestion('');return;
+      }
+    }
     if(draftStep==='category'||chatMode==='priceCategories'){
       const c=answerChoice(categories,'القسم');if(!c)return;
       const subs=subCategories.filter(x=>String(x.categoryId)===String(c.id));
