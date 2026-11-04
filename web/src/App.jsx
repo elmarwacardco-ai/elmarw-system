@@ -252,7 +252,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
           </div>
         </div>}
       {loggedClient && !draftStep && <div style={{padding:'8px 12px',fontSize:13}}>
-        {chatMode==='menu' && !draftStep && <p>قولّي تحب تعرف أسعار إيه، تعمل أوردر جديد، ولا تتابع أوردر موجود؟</p>}
+        
         {chatMode==='priceDetails' && <p>اكتب الكمية اللي محتاجها: {availableQuantities.map(q=>q+' نسخة = '+priceTable[q]+' جنيه').join('، ')||'مفيش أسعار متاحة'}</p>}
       </div>}
       {draftStep && <div style={{padding:'10px 12px',fontSize:13}}>
