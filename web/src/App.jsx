@@ -14,6 +14,52 @@ async function apiRead(resource, token) {
   return body
 }
 
+
+function SiteChatAssistant({ products, loggedClient, onMyOrders }) {
+  const [open, setOpen] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
+  const reply = (raw) => {
+    const q = raw.trim()
+    if (!q) return
+    const normalized = q.toLocaleLowerCase('ar')
+    let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
+    if (/سعر|اسعار|أسعار|تكلف|بكام/.test(normalized)) {
+      answer = 'الأسعار بتختلف حسب المنتج والكمية وفئة العميل (VIP أو B). افتح القسم والمنتج علشان تشوف الأسعار المتاحة لحسابك.'
+    } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized) && /حالة|متابع|فين|وصل/.test(normalized)) {
+      answer = loggedClient ? 'تقدر تراجع حالة طلباتك من صفحة «طلباتي». اضغط زر «عرض طلباتي» تحت.' : 'لمتابعة طلبك، سجل دخولك الأول وبعدها افتح «طلباتي». مش هنعرض بيانات طلب من غير تسجيل دخول.'
+    } else if (/pdf|ملف|ارفع|تصميم/.test(normalized)) {
+      answer = 'اختار المنتج والكمية واسم الشغل، وارفع ملف PDF الخاص بالطباعة عند إرسال الطلب. إيصال الدفع اختياري للمراجعة.'
+    } else if (/دفع|فودافون|انستا|تحويل|نقد/.test(normalized)) {
+      answer = 'طرق الدفع المتاحة في النظام: نقدي، فودافون كاش، إنستا باي، تحويل بنكي، وآجل حسب حساب العميل.'
+    } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized)) {
+      answer = 'ابدأ باختيار القسم ثم المنتج والكمية، واكتب اسم الشغل وارفع ملف PDF، وبعدها راجع تفاصيل الطلب قبل الإرسال.'
+    } else {
+      const matches = (products || []).filter(p => p.name && normalized.length >= 3 && p.name.toLocaleLowerCase('ar').includes(normalized)).slice(0, 4)
+      if (matches.length) answer = 'لقيت المنتجات دي: ' + matches.map(p => p.name).join('، ') + '. افتح قسم المنتج علشان تشوف السعر حسب الكمية.'
+    }
+    setMessages(prev => [...prev.slice(-17), { from: 'user', text: q }, { from: 'bot', text: answer }])
+    setQuestion('')
+  }
+  return <div dir="rtl" style={{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
+    {open && <section role="dialog" aria-label="مساعد المروة" style={{width:'min(350px, calc(100vw - 36px))',height:'min(480px, 70vh)',background:'white',borderRadius:16,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:10,border:'1px solid #dbeafe'}}>
+      <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة</strong><button type="button" onClick={()=>setOpen(false)} aria-label="إغلاق المحادثة" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>×</button></header>
+      <div aria-live="polite" style={{flex:1,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
+        {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
+      </div>
+      <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
+        {['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
+        {loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
+      </div>
+      <form onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
+        <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="اسأل عن المنتجات أو الطلبات..." maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
+        <button type="submit" disabled={!question.trim()} style={{background:'#1e3a8a',color:'white',border:0,borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>إرسال</button>
+      </form>
+    </section>}
+    <button type="button" aria-label={open?'إغلاق مساعد المروة':'فتح مساعد المروة'} onClick={()=>setOpen(v=>!v)} style={{border:0,borderRadius:30,background:'#1e3a8a',color:'white',padding:'13px 18px',fontWeight:800,boxShadow:'0 6px 20px #0f172a55',cursor:'pointer'}}>💬 {open?'إغلاق':'اسأل المروة'}</button>
+  </div>
+}
+
 export default function App() {
   const [clients, setClients] = useState([])
   const [showStickerSettings, setShowStickerSettings] = useState(false)
@@ -688,6 +734,7 @@ export default function App() {
         {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><input aria-label="بحث في منتجات القسم" placeholder="🔎 ابحث عن منتج بالاسم" value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)} style={{width:'100%',maxWidth:440,padding:'12px 14px',border:'1px solid #cbd5e1',borderRadius:10,marginBottom:12,boxSizing:'border-box',fontSize:15}} /><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
       </div>
 
+      {!showAdmin && <SiteChatAssistant products={products} loggedClient={loggedClient} onMyOrders={()=>setShowMyOrders(true)} />}
       {showMyOrders && <div style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.85)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:400, padding:'10px'}}>
         <div style={{background:'white', width:'95%', maxWidth:'900px', maxHeight:'92vh', borderRadius:'16px', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px rgba(0,0,0,0.4)'}}>
           <div style={{background:'#0f172a', color:'white', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, zIndex:20}}><div style={{fontWeight:900}}>📦 طلباتي - {loggedClient?.name} | مطبعة المروة</div><button onClick={()=> setShowMyOrders(false)} style={{background:'white', color:'#0f172a', border:'none', padding:'7px 16px', fontWeight:900, cursor:'pointer', borderRadius:'20px'}}>X اغلاق</button></div>
