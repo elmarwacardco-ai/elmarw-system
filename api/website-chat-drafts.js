@@ -68,8 +68,8 @@ export default async function handler(req,res) {
     if(adminError||!admin)return res.status(403).json({error:'غير مصرح باعتماد الطلب'});
     const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
     const draftId=String(b.draftId||''),deliveryDate=String(b.deliveryDate||'');
-    if(!/^[0-9a-f-]{36}$/i.test(draftId)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(deliveryDate))return res.status(400).json({error:'رقم المسودة أو موعد التسليم غير صحيح'});
-    const {data,error}=await db.rpc('marwa_approve_website_draft',{p_draft_id:draftId,p_delivery_date:deliveryDate});
+    if(!/^[0-9a-f-]{36}$/i.test(draftId)||(deliveryDate&&!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(deliveryDate)))return res.status(400).json({error:'رقم المسودة أو موعد التسليم غير صحيح'});
+    const {data,error}=await db.rpc('marwa_approve_website_draft',{p_draft_id:draftId,p_delivery_date:deliveryDate||null});
     if(error)return res.status(409).json({error:error.message});
     return res.status(200).json({approved:true,...data});
   }
