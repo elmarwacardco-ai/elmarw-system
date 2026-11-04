@@ -13,7 +13,7 @@ export default async function handler(req,res) {
   if(req.method==='POST' && String(req.query?.action||'')==='payment'){
     const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
     const draftId=String(b.draftId||''),method=String(b.method||'');
-    const allowed=['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'];
+    const allowed=['نقدي','فودافون كاش','انستا باي','تحويل بنكي'];
     if(!/^[0-9a-f-]{36}$/i.test(draftId)||!allowed.includes(method))return res.status(400).json({error:'بيانات طريقة الدفع غير صحيحة'});
     const {data:draft,error:readError}=await db.from('website_chat_drafts').select('id,status,payment_receipt_path').eq('id',draftId).eq('customer_id',auth.user.id).maybeSingle();
     if(readError||!draft)return res.status(404).json({error:'المسودة غير موجودة في حسابك'});
