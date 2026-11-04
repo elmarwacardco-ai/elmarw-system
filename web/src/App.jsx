@@ -19,11 +19,12 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [open, setOpen] = useState(false)
   const [draftStep, setDraftStep] = useState('')
   const [welcomeStep,setWelcomeStep]=useState('ask')
+  const [chatMode,setChatMode]=useState('menu')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
-  const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
+  const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 هساعدك خطوة بخطوة في الأسعار والطلبات.' }])
   const messageListRef = useRef(null)
   useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep])
   const submitDraft = async () => {
@@ -53,11 +54,18 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const priceTable = (()=>{try { const v=loggedClient?.type==='VIP'?chosenProduct?.pricesVIP:chosenProduct?.pricesB;return typeof v==='string'?JSON.parse(v):v||{} }catch{return {}}})()
   const availableQuantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(q=>Number(priceTable[q])>0)
   const draftButton = (label,callback) => <button type="button" key={label} onClick={callback} style={{display:'block',width:'100%',textAlign:'right',padding:'9px 11px',margin:'5px 0',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer'}}>{label}</button>
+  const showChatMenu = () => {setChatMode('menu');setDraftStep('')}
+  const showPriceCategories = () => {setChatMode('priceCategories');setDraftStep('');setMessages(prev=>[...prev,{from:'bot',text:'اختار القسم اللي تحب تعرف أسعاره 👇'}])}
+  const showPriceSubcategories = id => {setDraft(v=>({...v,categoryId:String(id)}));setChatMode('priceSubcategories')}
+  const showPriceProducts = id => {setDraft(v=>({...v,subCategoryId:String(id)}));setChatMode('priceProducts')}
+  const showPriceProduct = id => {setDraft(v=>({...v,productId:String(id)}));setChatMode('priceDetails')}
   const reply = (raw) => {
     const q = raw.trim()
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
-    if(!loggedClient && /السلام|سلام عليكم|صباح|مساء|اهلا|أهلا|مرحبا/.test(normalized)) setWelcomeStep('ask')
+    if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
+    if(/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');showPriceCategories();return}
+    if(/طلب جديد|اطبع|عايز اطلب|اعمل طلب/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');beginDraft();return}
     let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
     if (/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)) {
       if(!loggedClient){setWelcomeStep('ask')}
@@ -102,6 +110,14 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
           </div>
         </div>}
       </div>
+      {loggedClient && !draftStep && <div style={{padding:'8px 12px',borderTop:'1px solid #e2e8f0',overflowY:'auto',maxHeight:210,flexShrink:0,fontSize:13}}>
+        {chatMode==='menu' && <><strong>أهلاً {loggedClient.name||'بيك'} 👋 تحب أساعدك في إيه؟</strong>{draftButton('💰 معرفة أسعار المنتجات',showPriceCategories)}{draftButton('🧾 طلب طباعة جديد',beginDraft)}{draftButton('📦 متابعة طلباتي',()=>{onMyOrders();setOpen(false)})}</>}
+        {chatMode==='priceCategories' && <><strong>اختار القسم</strong>{categories.map(c=>draftButton(c.name,()=>showPriceSubcategories(c.id)))}</>}
+        {chatMode==='priceSubcategories' && <><strong>اختار القسم الفرعي</strong>{subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>showPriceProducts(c.id)))}</>}
+        {chatMode==='priceProducts' && <><strong>اختار المنتج</strong>{products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>showPriceProduct(p.id)))}</>}
+        {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{setDraft(v=>({...v,quantity:String(q)}));setDraftStep('job');setMessages(prev=>[...prev,{from:'bot',text:'تم اختيار '+q+' نسخة من '+chosenProduct?.name+'. اكتب اسم الشغل علشان نكمل طلب الطباعة.'}])})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
+        {chatMode!=='menu'&&draftButton('↩ رجوع للقائمة الرئيسية',showChatMenu)}
+      </div>}
       {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
         {draftStep==='login' && <p>سجّل دخول العميل أولاً علشان نستخدم فئتك السعرية ونحافظ على خصوصية طلباتك.</p>}
