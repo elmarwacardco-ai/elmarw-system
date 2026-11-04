@@ -22,6 +22,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [chatMode,setChatMode]=useState('menu')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [lastDraftId,setLastDraftId] = useState('')
+  const [approvalNotified,setApprovalNotified] = useState('')
   const [paymentChoice,setPaymentChoice] = useState('')
   const [paymentReceipt,setPaymentReceipt] = useState(null)
   const [paymentBusy,setPaymentBusy] = useState(false)
@@ -73,9 +74,29 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setMessages(prev=>[...prev,{from:'bot',text:d.status==='approved'?'🎉 تمت موافقة موظف المروة على طلبك!\nرقم الأوردر الرسمي: '+d.approved_order_id+'\nتقدر تستخدم الكود ده لمتابعة الأوردر.':'⏳ طلبك '+d.job_name+' لسه بانتظار مراجعة موظف المروة. رقم المسودة: '+d.id}]);
     }catch(e){setMessages(prev=>[...prev,{from:'bot',text:'تعذر متابعة الطلب: '+e.message}])}
   }
+  useEffect(()=>{
+    if(!open||!lastDraftId||approvalNotified===lastDraftId)return;
+    let active=true;
+    const check=async()=>{
+      try{
+        const token=sessionStorage.getItem('elmarw_customer_token');
+        if(!token)return;
+        const response=await fetch('/api/website-chat-drafts.js?action=my-status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:lastDraftId})});
+        if(!response.ok)return;
+        const result=await response.json();
+        if(active&&result.draft?.status==='approved'&&result.draft.approved_order_id){
+          setApprovalNotified(lastDraftId);
+          setMessages(prev=>[...prev,{from:'bot',text:'🎉 مبروك يا '+(loggedClient?.name||'فندم')+'! موظف المروة وافق على طلبك.\nكود الأوردر الرسمي: '+result.draft.approved_order_id+'\nاحتفظ بالكود لمتابعة طلبك.'}]);
+        }
+      }catch(e){console.warn('Order status check failed',e)}
+    };
+    check();
+    const timer=setInterval(check,30000);
+    return()=>{active=false;clearInterval(timer)}
+  },[open,lastDraftId,approvalNotified,loggedClient?.name])
   const beginDraft = () => {
     if(!loggedClient){setWelcomeStep('ask');return}
-    setDraftError('');setLastDraftId('')
+    setDraftError('');setLastDraftId('');setApprovalNotified('')
     setDraft({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
     setDraftStep(loggedClient ? 'category' : 'login')
     setMessages(prev=>[...prev,{from:'bot',text:'تمام يا '+(loggedClient.name||'فندم')+' 😊 هنجهز طلبك سوا. اختار نوع الشغل الأول، وبعدها هسألك عن الكمية وملف التصميم.'}])
