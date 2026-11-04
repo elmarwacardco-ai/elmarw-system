@@ -53,6 +53,24 @@ export default async function handler(req,res) {
     if(signError||!signed?.signedUrl)return res.status(503).json({error:'تعذر فتح الملف'});
     return res.status(200).json({url:signed.signedUrl});
   }
+  if(req.method==='POST' && String(req.query?.action||'')==='approve'){
+    const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+    if(adminError||!admin)return res.status(403).json({error:'غير مصرح باعتماد الطلب'});
+    const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+    const draftId=String(b.draftId||''),deliveryDate=String(b.deliveryDate||'');
+    if(!/^[0-9a-f-]{36}$/i.test(draftId)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(deliveryDate))return res.status(400).json({error:'رقم المسودة أو موعد التسليم غير صحيح'});
+    const {data,error}=await db.rpc('marwa_approve_website_draft',{p_draft_id:draftId,p_delivery_date:deliveryDate});
+    if(error)return res.status(409).json({error:error.message});
+    return res.status(200).json({approved:true,...data});
+  }
+  if(req.method==='POST' && String(req.query?.action||'')==='my-status'){
+    const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+    const draftId=String(b.draftId||'');
+    if(!/^[0-9a-f-]{36}$/i.test(draftId))return res.status(400).json({error:'رقم المسودة غير صحيح'});
+    const {data:d,error}=await db.from('website_chat_drafts').select('id,status,approved_order_id,job_name,quantity,quoted_price,payment_method,created_at').eq('id',draftId).eq('customer_id',auth.user.id).maybeSingle();
+    if(error||!d)return res.status(404).json({error:'المسودة غير موجودة في حسابك'});
+    return res.status(200).json({draft:d});
+  }
   if(req.method==='GET'){
     const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
     if(adminError||!admin)return res.status(403).json({error:'غير مصرح بعرض المسودات'});
