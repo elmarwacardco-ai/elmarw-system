@@ -101,6 +101,13 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     setDraftStep(loggedClient ? 'category' : 'login')
     setMessages(prev=>[...prev,{from:'bot',text:'تمام يا '+(loggedClient.name||'فندم')+' 😊 هنجهز طلبك سوا. دي أقسام المروة المتاحة، اختار بالاسم أو الرقم:\n'+chatOptions(categories)}])
   }
+  const productSpecifications=p=>String(p?.specifications||'').trim();
+  const describeProduct=(p,qty)=>'📋 مواصفات '+p.name+':\\n'+productSpecifications(p)+'\\n\\n'+(qty?'الكمية المطلوبة: '+qty+' نسخة. ':'')+'لو المواصفات مناسبة اكتب «تمام» علشان نكمل للكمية.';
+  const showProductSpecs=(p,inDraft,qty='')=>{
+    setDraft(v=>({...v,categoryId:String(p.categoryId||''),subCategoryId:String(p.subCategoryId||''),productId:String(p.id),quantity:''}));
+    if(inDraft)setDraftStep('specifications');else setChatMode('priceSpecifications');
+    setMessages(prev=>[...prev,{from:'bot',text:describeProduct(p,qty)}]);
+  };
   const confirmQuantity = (quantity) => {
     setDraft(v=>({...v,quantity:String(quantity)}))
     setDraftStep('confirm')
@@ -129,6 +136,16 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
     const normalizeName=v=>String(v||'').toLocaleLowerCase('ar').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').trim();
+    if(draftStep==='specifications'||chatMode==='priceSpecifications'){
+      const yes=/^(تمام|موافق|اكمل|كمل|نعم|ايوه|أيوه|اه|آه|ok|yes)$/i.test(q);
+      if(yes){
+        const qty=availableQuantities;
+        if(draftStep==='specifications')setDraftStep('quantity');else setChatMode('priceDetails');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'ممتاز 👌 اختار الكمية المناسبة:\\n'+qty.map(n=>n+' نسخة').join('، '):'مفيش أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
+      }
+      if(/^(رجوع|تغيير|غير|لا|لأ)$/i.test(q)){setDraftStep('');setChatMode('priceCategories');setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، اختار قسم أو اكتب اسم منتج تاني.'}]);setQuestion('');return}
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'لو المواصفات مناسبة اكتب «تمام»، أو اكتب «تغيير» لاختيار منتج تاني.'}]);setQuestion('');return;
+    }
     // Conversational shortcut: understand a product and a quantity in one sentence.
     const natural=normalizeName(q).replace(/[^\\p{L}\\p{N} ]/gu,' ').replace(/\\s+/g,' ').trim();
     const digitInput=natural.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
@@ -144,6 +161,10 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const quantities=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
       setDraft(v=>({...v,categoryId:String(p.categoryId||''),subCategoryId:String(p.subCategoryId||''),productId:String(p.id),quantity:requestedQuantity&&quantities.includes(requestedQuantity)?String(requestedQuantity):''}));
       setQuestion('');
+      if(productSpecifications(p)){
+        setDraftStep('specifications');setChatMode('menu');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(p,requestedQuantity)}]);return;
+      }
       if(requestedQuantity&&quantities.includes(requestedQuantity)){
         setDraftStep('confirm');setChatMode('menu');
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام 👌 '+p.name+'، '+requestedQuantity+' نسخة بسعر '+table[requestedQuantity]+' جنيه لفئة حسابك. تحب نكمل الطلب؟'}]);return;
@@ -184,7 +205,11 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         const table=(()=>{try{const v=loggedClient?.type==='VIP'?product.pricesVIP:product.pricesB;return typeof v==='string'?JSON.parse(v):v||{}}catch{return {}}})();
         const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
         setDraft(v=>({...v,categoryId:String(product.categoryId||''),subCategoryId:String(product.subCategoryId||''),productId:String(product.id),quantity:''}));
-        if(inDraft)setDraftStep('quantity');else setChatMode('priceDetails');
+        if(productSpecifications(product)){
+          if(inDraft)setDraftStep('specifications');else setChatMode('priceSpecifications');
+          setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(product)}]);setQuestion('');return;
+        }
+      if(inDraft)setDraftStep('quantity');else setChatMode('priceDetails');
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية:\\n'+qty.map(n=>n+' نسخة').join('\\n'):'مفيش أسعار متاحة للمنتج ده.'}]);setQuestion('');return;
       }
     }
@@ -208,6 +233,10 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setDraft(v=>({...v,productId:String(p.id)}));
       const table=(()=>{try{let x=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof x==='string'?JSON.parse(x):x||{}}catch{return {}}})();
       const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
+      if(productSpecifications(p)){
+        if(draftStep==='product')setDraftStep('specifications');else setChatMode('priceSpecifications');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(p)}]);setQuestion('');return;
+      }
       if(draftStep==='product')setDraftStep('quantity');else setChatMode('priceDetails');
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية واكتب عدد النسخ:\n'+qty.map((n,i)=>(i+1)+'. '+n+' نسخة').join('\n'):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
     }
@@ -319,6 +348,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='category' && categories.map(c=>draftButton(c.name,()=>chooseDraft('categoryId',String(c.id),'subcategory')))}
         {draftStep==='subcategory' && subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>chooseDraft('subCategoryId',String(c.id),'product')))}
         {draftStep==='product' && products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>chooseDraft('productId',String(p.id),'quantity')))}
+        {draftStep==='specifications' && <div><p style={{whiteSpace:'pre-wrap'}}>📋 {chosenProduct?.name}\\n{productSpecifications(chosenProduct)}</p>{draftButton('المواصفات مناسبة — كمل',()=>{setDraftStep('quantity');setMessages(prev=>[...prev,{from:'bot',text:'تمام، اختار الكمية المناسبة.'}])})}</div>}
         {draftStep==='quantity' && (availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>confirmQuantity(q))):<p>لا توجد أسعار متاحة للمنتج وفئة حسابك.</p>)}
         {draftStep==='confirm' && <div><p>🧾 حضرتك اخترت <b>{chosenProduct?.name}</b> — <b>{draft.quantity} نسخة</b> بسعر <b>{priceTable[draft.quantity]} جنيه</b> لفئة {loggedClient?.type==='VIP'?'VIP':'B'}. تحب نكمل الأوردر؟</p>{draftButton('✅ أيوه، كمل الأوردر',()=>{setDraftStep('job');setMessages(prev=>[...prev,{from:'user',text:'أيوه، كمل الأوردر'},{from:'bot',text:'تمام يا فندم، اكتب اسم الشغل علشان نكمل.'}])})}{draftButton('🔄 لا، غيّر الكمية',()=>{setDraftStep('quantity');setMessages(prev=>[...prev,{from:'user',text:'تغيير الكمية'},{from:'bot',text:'اختار الكمية الجديدة 👇'}])})}{draftButton('↩ تغيير المنتج',()=>{setDraftStep('product');setDraft(v=>({...v,quantity:''}))})}</div>}
         {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim()){setDraftStep(draft.pdf?'preview':'pdf');setDraftError('');setMessages(prev=>[...prev,{from:'bot',text:'تسلم يا '+(loggedClient?.name||'فندم')+' 🙌 ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة (لحد 3 ميجابايت).'}])}}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">{draft.pdf?'التالي: مراجعة الطلب':'التالي: رفع ملف التصميم'}</button></form>}
@@ -449,7 +479,7 @@ export default function App() {
   const [employeeForm, setEmployeeForm] = useState({ id: null, name: '', phone: '', pass: '', permissions: { dashboard: true, orders: true, clients: true, categories: true, products: true, employees: false, shipping: true } })
   const [categoryForm, setCategoryForm] = useState({ name: '', id: null })
   const [subCategoryForm, setSubCategoryForm] = useState({ name: '', categoryId: '', image: '', id: null })
-  const [productForm, setProductForm] = useState({ name: '', categoryId: '', subCategoryId: '', image: '', id: null, pricesB: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}, pricesVIP: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''} })
+  const [productForm, setProductForm] = useState({ name: '', categoryId: '', subCategoryId: '', image: '', specifications: '', id: null, pricesB: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}, pricesVIP: {1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''} })
   const [login, setLogin] = useState({ phone: '', pass: '' })
   const [loggedClient, setLoggedClient] = useState(null)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -736,7 +766,7 @@ export default function App() {
     } catch(e){ console.error('Order submission failed:',e); alert('تعذر إرسال الطلب: ' + e.message); }
   }
   const getPriceForDisplay = (product, qty) => { let pB = product.pricesB; let pV = product.pricesVIP; try{ if(typeof pB==='string') pB=JSON.parse(pB) }catch{} try{ if(typeof pV==='string') pV=JSON.parse(pV) }catch{} const price = loggedClient? (loggedClient.type === 'VIP'? pV?.[qty] : pB?.[qty]) : pB?.[qty]; if(price===undefined || price===null || price==='') return null; const numericPrice=Number(price); if(!Number.isFinite(numericPrice) || numericPrice<=0) return null; return numericPrice }
-  const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
+  const handleEditProduct = (p) => { let b = p.pricesB || {}; let vip = p.pricesVIP || {}; try{ if(typeof b==='string') b=JSON.parse(b) }catch{} try{ if(typeof vip==='string') vip=JSON.parse(vip) }catch{} setProductForm({ name: p.name, categoryId: p.categoryId||'', subCategoryId: p.subCategoryId||'', image: p.image||'', specifications: p.specifications||'', id: p.id, pricesB: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...b}, pricesVIP: {...{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},...vip} }); setShowProductForm(true) }
   const folderRequest = async (path, method, body) => {
     const token=sessionStorage.getItem(TOKEN_KEY)
     if (!token) {setShowAdmin(false);setShowAdminLogin(true);throw new Error('جلسة المدير غير موجودة، سجل الدخول مجددًا')}
@@ -1043,12 +1073,12 @@ const BotDraftCard=({d})=>{const [draftMethod,setDraftMethod]=useState(d.payment
         </div>
         {showCategoryForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'350px'}}><h3>تصنيف رئيسي</h3><input placeholder="اسم التصنيف" value={categoryForm.name} onChange={e=> setCategoryForm({...categoryForm, name:e.target.value})} style={inputStyle}/><button onClick={saveCategory} disabled={categoryBusy} style={{...btnStyle, background:'#f59e0b', color:'white', width:'100%'}}>حفظ</button><button onClick={()=> setShowCategoryForm(false)} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
         {showSubCategoryForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'350px'}}><h3>تصنيف فرعي</h3><select value={subCategoryForm.categoryId} onChange={e=> setSubCategoryForm({...subCategoryForm, categoryId: e.target.value})} style={inputStyle}><option value="">اختر الرئيسي</option>{categories.map(c=> <option key={c.id} value={String(c.id)}>{c.name}</option>)}</select><input placeholder="اسم الفرعي" value={subCategoryForm.name} onChange={e=> setSubCategoryForm({...subCategoryForm, name:e.target.value})} style={inputStyle}/><button onClick={async()=> {if(!subCategoryForm.name ||!subCategoryForm.categoryId) return; const token=sessionStorage.getItem(TOKEN_KEY);const response=await fetch(`${API}subCategories/${subCategoryForm.id||''}`, {method:subCategoryForm.id?'PUT':'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({name: subCategoryForm.name, categoryId: subCategoryForm.categoryId})});const result=await response.json().catch(()=>({}));if(!response.ok){alert(result.error||'تعذر حفظ القسم الفرعي');return;} setShowSubCategoryForm(false); setSubCategoryForm({name:'', categoryId:'', image:'', id:null}); loadAll()}} style={{...btnStyle, background:'#8b5cf6', color:'white', width:'100%'}}>حفظ</button><button onClick={()=> setShowSubCategoryForm(false)} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
-        {showProductForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'500px', maxHeight:'90vh', overflowY:'auto'}}><h3>{productForm.id? 'تعديل منتج':'منتج جديد'}</h3>{productSaveMessage&&<div role="alert" style={{padding:12,marginBottom:12,borderRadius:8,background:productSaveMessage.startsWith('✅')?'#dcfce7':'#fee2e2',color:'#7f1d1d',fontWeight:700}}>{productSaveMessage}</div>}<input placeholder="اسم المنتج" value={productForm.name} onChange={e=> setProductForm({...productForm, name:e.target.value})} style={inputStyle}/><input placeholder="رابط الصورة (اختياري)" value={productForm.image} onChange={e=> setProductForm({...productForm, image:e.target.value})} style={inputStyle}/><select value={productForm.subCategoryId} onChange={e=> setProductForm({...productForm, subCategoryId: e.target.value})} style={inputStyle}><option value="">اختر الفرعي</option>{subCategories.map(s=> <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select><div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}><div><b style={{color:'#1e3a8a'}}>💰 B</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesB[q]||''} onChange={e=> setProductForm({...productForm, pricesB:{...productForm.pricesB, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div><div><b style={{color:'#f59e0b'}}>⭐ VIP</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesVIP[q]||''} onChange={e=> setProductForm({...productForm, pricesVIP:{...productForm.pricesVIP, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div></div><button disabled={productSaving} onClick={async()=> {
+        {showProductForm && <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:300}}><div style={{background:'white', padding:'20px', borderRadius:'12px', width:'500px', maxHeight:'90vh', overflowY:'auto'}}><h3>{productForm.id? 'تعديل منتج':'منتج جديد'}</h3>{productSaveMessage&&<div role="alert" style={{padding:12,marginBottom:12,borderRadius:8,background:productSaveMessage.startsWith('✅')?'#dcfce7':'#fee2e2',color:'#7f1d1d',fontWeight:700}}>{productSaveMessage}</div>}<input placeholder="اسم المنتج" value={productForm.name} onChange={e=> setProductForm({...productForm, name:e.target.value})} style={inputStyle}/><input placeholder="رابط الصورة (اختياري)" value={productForm.image} onChange={e=> setProductForm({...productForm, image:e.target.value})} style={inputStyle}/><label style={{display:"block",fontWeight:700,marginTop:10}}>مواصفات المنتج</label><textarea rows={5} placeholder={"اكتب تفاصيل المنتج، مثل: المقاس، نوع الورق، الجرام، التشطيب، الألوان، وأي ملاحظات. كل مواصفة في سطر."} value={productForm.specifications||""} onChange={e=>setProductForm({...productForm,specifications:e.target.value})} style={{...inputStyle,minHeight:110,resize:"vertical"}}/><select value={productForm.subCategoryId} onChange={e=> setProductForm({...productForm, subCategoryId: e.target.value})} style={inputStyle}><option value="">اختر الفرعي</option>{subCategories.map(s=> <option key={s.id} value={String(s.id)}>{s.name}</option>)}</select><div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}><div><b style={{color:'#1e3a8a'}}>💰 B</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesB[q]||''} onChange={e=> setProductForm({...productForm, pricesB:{...productForm.pricesB, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div><div><b style={{color:'#f59e0b'}}>⭐ VIP</b>{quantities.map(q=> <div key={q} style={{display:'flex', alignItems:'center', gap:'4px'}}><span style={{width:'40px', fontSize:'12px'}}>{q}</span><input placeholder="0" value={productForm.pricesVIP[q]||''} onChange={e=> setProductForm({...productForm, pricesVIP:{...productForm.pricesVIP, [q]: e.target.value}})} style={{...inputStyle, margin:'4px 0'}}/></div>)}</div></div><button disabled={productSaving} onClick={async()=> {
           if(productSaving)return;
           if(!productForm.name.trim()||!productForm.subCategoryId){setProductSaveMessage('❌ اكتب اسم المنتج واختار القسم الفرعي');return}
           const nb={},nv={};
           quantities.forEach(q=>{nb[q]=Number(productForm.pricesB[q])||0;nv[q]=Number(productForm.pricesVIP[q])||0});
-          const payload={name:productForm.name.trim(),image:productForm.image,subCategoryId:String(productForm.subCategoryId),pricesB:nb,pricesVIP:nv};
+          const payload={name:productForm.name.trim(),image:productForm.image,specifications:(productForm.specifications||'').trim(),subCategoryId:String(productForm.subCategoryId),pricesB:nb,pricesVIP:nv};
           setProductSaving(true);setProductSaveMessage('⏳ جاري إرسال المنتج للسيرفر...');
           try{
             const token=sessionStorage.getItem(TOKEN_KEY);
@@ -1059,7 +1089,7 @@ const BotDraftCard=({d})=>{const [draftMethod,setDraftMethod]=useState(d.payment
             setProductSaveMessage('✅ تم حفظ المنتج. جاري تحديث القائمة...');
             try { await loadAll() } catch(e) { console.error('Refresh products failed',e) }
             setShowProductForm(false);
-            setProductForm({name:'',categoryId:'',subCategoryId:'',image:'',id:null,pricesB:{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},pricesVIP:{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}});
+            setProductForm({name:'',categoryId:'',subCategoryId:'',image:'',specifications:'',id:null,pricesB:{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''},pricesVIP:{1000:'',2000:'',3000:'',4000:'',5000:'',6000:'',7000:'',8000:'',9000:'',10000:''}});
             alert('تم حفظ المنتج بنجاح');
           }catch(error){setProductSaveMessage('❌ لم يتم حفظ المنتج: '+error.message)}finally{setProductSaving(false)}
         }} style={{...btnStyle, background:'#16a34a', color:'white', width:'100%'}}>{productSaving?'جاري الحفظ...':'💾 حفظ'}</button><button onClick={()=>{setShowProductForm(false);setProductSaveMessage('')}} style={{...btnStyle, background:'#6b7280', color:'white', width:'100%'}}>الغاء</button></div></div>}
