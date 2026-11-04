@@ -32,7 +32,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 هساعدك خطوة بخطوة في الأسعار والطلبات.' }])
   const greetedCustomer=useRef('')
-  useEffect(()=>{if(!open||!loggedClient)return;const identity=String(loggedClient.id||loggedClient.phone||loggedClient.name||'');if(greetedCustomer.current===identity)return;greetedCustomer.current=identity;setMessages(prev=>[...prev,{from:'bot',text:'أهلاً وسهلاً يا '+(loggedClient.name||'عميل المروة')+' 🌟 نورت المروة للطباعة! تحب تعمل طلب طباعة جديد، تعرف الأسعار، ولا تتابع طلبك؟'}])},[open,loggedClient?.id,loggedClient?.name,loggedClient?.phone])
+  useEffect(()=>{if(!open||!loggedClient)return;const identity=String(loggedClient.id||loggedClient.phone||loggedClient.name||'');if(greetedCustomer.current===identity)return;greetedCustomer.current=identity;setMessages(prev=>prev.length===1 && prev[0]?.from==='bot' ? [{from:'bot',text:'أهلاً وسهلاً يا '+(loggedClient.name||'عميل المروة')+' 🌟 نورت المروة للطباعة! تحب تعمل طلب طباعة جديد، تعرف الأسعار، ولا تتابع طلبك؟'}] : prev)},[open,loggedClient?.id,loggedClient?.name,loggedClient?.phone])
   const messageListRef = useRef(null)
   useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep,chatMode,draftStep,draft.categoryId,draft.subCategoryId,draft.productId])
   const submitDraft = async () => {
@@ -155,7 +155,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const table=(()=>{try{let x=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof x==='string'?JSON.parse(x):x||{}}catch{return {}}})();
       const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
       if(draftStep==='product')setDraftStep('quantity');else setChatMode('priceDetails');
-      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختر الكمية واكتب رقمها: '+qty.map(n=>n+' نسخة = '+table[n]+' جنيه').join('، '):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية واكتب عدد النسخ:\n'+qty.map((n,i)=>(i+1)+'. '+n+' نسخة').join('\n'):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
     }
     if(draftStep==='quantity'||chatMode==='priceDetails'){
       const quantity=Number(q.replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[۰-۹]/g,c=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,''));
