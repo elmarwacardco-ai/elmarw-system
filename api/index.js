@@ -399,6 +399,22 @@ export default async function handler(req, res) {
       if (readError) return res.status(500).json({error:'تعذر تحميل الطلبات'});
       return res.status(200).json((rows||[]).map(r=>({...r.details,id:r.id,date:r.created_at})));
     }
+    if (req.method === 'PUT' && ['categories','subCategories'].includes(key)) {
+      const db=getDatabase();
+      const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+      if(!token)return res.status(401).json({error:'يرجى تسجيل دخول المدير'});
+      const {data:auth,error:authError}=await db.auth.getUser(token);
+      if(authError||!auth?.user)return res.status(401).json({error:'جلسة غير صالحة'});
+      const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+      if(adminError||!admin)return res.status(403).json({error:'غير مصرح بتعديل الأقسام'});
+      const id=pathname.split('/')[3];
+      const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+      const name=String(body.name||'').trim();
+      if(!id||!name||name.length>120)return res.status(400).json({error:'بيانات القسم غير صحيحة'});
+      const {data,error}=await db.rpc('marwa_edit_catalog_category',{p_kind:key,p_id:String(id),p_name:name,p_parent:body.categoryId==null?null:String(body.categoryId)});
+      if(error)return res.status(400).json({error:error.message});
+      return res.status(200).json(data);
+    }
     // السماح بإضافة التصنيفات الرئيسية فقط
     if (req.method === 'POST' && key !== 'categories') {
       return res.status(405).json({
