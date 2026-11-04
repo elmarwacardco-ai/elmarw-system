@@ -117,9 +117,9 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const availableQuantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(q=>Number(priceTable[q])>0)
   const draftButton = (label,callback) => <button className="marwa-chat-choice" type="button" key={label} onClick={callback}>{label}<span aria-hidden="true">‹</span></button>
   const showChatMenu = () => {setChatMode('menu');setDraftStep('')}
-  const showPriceCategories = () => {setChatMode('priceCategories');setDraftStep('');setMessages(prev=>[...prev,{from:'bot',text:'اختار القسم اللي تحب تعرف أسعاره 👇'}])}
-  const showPriceSubcategories = id => {setDraft(v=>({...v,categoryId:String(id)}));setChatMode('priceSubcategories')}
-  const showPriceProducts = id => {setDraft(v=>({...v,subCategoryId:String(id)}));setChatMode('priceProducts')}
+  const showPriceCategories = () => {setChatMode('priceCategories');setDraftStep('');setDraft(v=>({...v,categoryId:'',subCategoryId:'',productId:''}));setMessages(prev=>prev[prev.length-1]?.text==='اختار القسم اللي تحب تعرف أسعاره 👇'?prev:[...prev.slice(-15),{from:'bot',text:'اختار القسم اللي تحب تعرف أسعاره 👇'}])}
+  const showPriceSubcategories = id => {setDraft(v=>({...v,categoryId:String(id),subCategoryId:'',productId:''}));setChatMode(subCategories.some(c=>String(c.categoryId)===String(id))?'priceSubcategories':'priceProducts')}
+  const showPriceProducts = id => {setDraft(v=>({...v,subCategoryId:String(id),productId:''}));setChatMode('priceProducts')}
   const showPriceProduct = id => {setDraft(v=>({...v,productId:String(id)}));setChatMode('priceDetails')}
   const reply = (raw) => {
     const q = raw.trim()
@@ -218,7 +218,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {chatMode==='menu' && <><strong>أهلاً {loggedClient.name||'بيك'} 👋 تحب أساعدك في إيه؟</strong>{draftButton('💰 معرفة أسعار المنتجات',showPriceCategories)}{draftButton('🧾 طلب طباعة جديد',beginDraft)}{draftButton('📦 متابعة طلباتي',()=>{onMyOrders();setOpen(false)})}</>}
         {chatMode==='priceCategories' && <><strong>اختار القسم</strong>{categories.map(c=>draftButton(c.name,()=>showPriceSubcategories(c.id)))}</>}
         {chatMode==='priceSubcategories' && <><strong>اختار القسم الفرعي</strong>{subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>showPriceProducts(c.id)))}</>}
-        {chatMode==='priceProducts' && <><strong>اختار المنتج</strong>{products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>showPriceProduct(p.id)))}</>}
+        {chatMode==='priceProducts' && <><strong>اختار المنتج</strong>{products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId).length?products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId).map(p=>draftButton(p.name,()=>showPriceProduct(p.id))):<p style={{color:'#92400e'}}>مفيش منتجات متاحة في القسم ده حاليًا. اختار قسم تاني أو اطلب المساعدة من خدمة العملاء.</p>}{draftButton('↩ تغيير القسم',showPriceCategories)}</>}
         {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{confirmQuantity(q)})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
         {chatMode!=='menu'&&draftButton('↩ رجوع للقائمة الرئيسية',showChatMenu)}
       </div>}
@@ -247,9 +247,9 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       </div>}
       </div>
       <div className="marwa-chat-actions" style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
-        {!draftStep&&draftButton('➕ ابدأ طلب طباعة',beginDraft)}
-        {!draftStep&&['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
-        {!draftStep&&loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
+        {!draftStep&&chatMode==='menu'&&draftButton('➕ ابدأ طلب طباعة',beginDraft)}
+        {!draftStep&&chatMode==='menu'&&['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
+        {!draftStep&&chatMode==='menu'&&loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
       </div>
       <form className="marwa-chat-form" onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
         <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder={draftStep==='job'?'اكتب اسم الشغل هنا...':draftStep?'اكتب استفسارك أو استخدم أزرار الخطوة...':'اسأل عن المنتجات أو الطلبات...'} maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
