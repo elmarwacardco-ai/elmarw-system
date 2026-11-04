@@ -18,9 +18,25 @@ async function apiRead(resource, token) {
 function SiteChatAssistant({ products, categories, subCategories, loggedClient, onMyOrders }) {
   const [open, setOpen] = useState(false)
   const [draftStep, setDraftStep] = useState('')
+  const [draftSubmitting,setDraftSubmitting] = useState(false)
+  const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
+  const submitDraft = async () => {
+    if(!draft.pdf || !loggedClient)return
+    setDraftSubmitting(true);setDraftError('')
+    try {
+      const token=sessionStorage.getItem('elmarw_customer_token')
+      if(!token)throw new Error('سجّل دخول العميل أولاً')
+      const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('تعذر قراءة الملف'));reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.readAsDataURL(draft.pdf)})
+      const response=await fetch('/api/website-chat-drafts.js',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({categoryId:draft.categoryId,subcategoryId:draft.subCategoryId,productId:draft.productId,quantity:draft.quantity,jobName:draft.jobName,fileName:draft.pdf.name,pdfBase64:base64})})
+      const result=await response.json().catch(()=>({}))
+      if(!response.ok)throw new Error(result.error||'تعذر إرسال المسودة')
+      setMessages(prev=>[...prev,{from:'bot',text:'تم استلام مسودة الشغل بنجاح ✅ رقم المسودة: '+result.draft.id+' — الطلب مش رسمي لحد ما الموظف يراجعه ويعتمده.'}])
+      setDraftStep('')
+    }catch(e){setDraftError(e.message)}finally{setDraftSubmitting(false)}
+  }
   const beginDraft = () => {
     setDraft({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
     setDraftStep(loggedClient ? 'category' : 'login')
@@ -69,8 +85,8 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='product' && products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>chooseDraft('productId',String(p.id),'quantity')))}
         {draftStep==='quantity' && (availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>chooseDraft('quantity',String(q),'job'))):<p>لا توجد أسعار متاحة للمنتج وفئة حسابك.</p>)}
         {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim())setDraftStep('pdf')}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: ملف PDF</button></form>}
-        {draftStep==='pdf' && <div><p>ملف PDF إلزامي، ولا يتم إنشاء طلب رسمي قبل مراجعة الموظف.</p><input aria-label="ملف الطباعة PDF" type="file" accept=".pdf,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f && (f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')) && f.size<=20*1024*1024){setDraft(v=>({...v,pdf:f}));setDraftStep('preview')}else if(f)alert('اختار ملف PDF أقل من 20 ميجابايت')}}/></div>}
-        {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>دي معاينة فقط. المسودة لم تُرسل للموظف ولم يُرفع الملف للسيرفر بعد. استكمال الربط الآمن بالمراجعة مطلوب قبل استقبال الطلبات من الشات.</p></div>}
+        {draftStep==='pdf' && <div><p>ملف PDF إلزامي، ولا يتم إنشاء طلب رسمي قبل مراجعة الموظف.</p><input aria-label="ملف الطباعة PDF" type="file" accept=".pdf,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f && (f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')) && f.size<=3*1024*1024){setDraft(v=>({...v,pdf:f}));setDraftStep('preview')}else if(f)alert('اختار ملف PDF أقل من 3 ميجابايت')}}/></div>}
+        {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>اضغط إرسال المسودة لرفع PDF وحفظ الطلب للمراجعة. لن يتم إصدار أوردر رسمي إلا بعد اعتماد الموظف.</p><button type="button" disabled={draftSubmitting} onClick={submitDraft} style={{background:'#16a34a',color:'white',padding:'10px 15px',border:0,borderRadius:9,cursor:'pointer'}}>{draftSubmitting?'جاري إرسال المسودة...':'إرسال المسودة للمراجعة'}</button>{draftError&&<p role="alert" style={{color:'#b91c1c'}}>{draftError}</p>}</div>}
         {draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
