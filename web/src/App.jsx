@@ -96,9 +96,10 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     setMessages(prev => [...prev.slice(-17), { from: 'user', text: q }, { from: 'bot', text: answer }])
     setQuestion('')
   }
-  return <div dir="rtl" style={{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
-    {open && <section role="dialog" aria-label="مساعد المروة" style={{width:'min(350px, calc(100vw - 36px))',height:'min(480px, 70vh)',background:'white',borderRadius:16,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:10,border:'1px solid #dbeafe'}}>
-      <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة</strong><button type="button" onClick={()=>setOpen(false)} aria-label="إغلاق المحادثة" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>×</button></header>
+  useEffect(()=>{if(!open)return;const previous=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.body.style.overflow=previous}},[open])
+  return <div dir="rtl" style={open?{position:'fixed',inset:0,zIndex:350,fontFamily:'inherit',background:'#0f172a',display:'flex',justifyContent:'center',alignItems:'stretch',padding:0}:{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
+    {open && <section role="dialog" aria-label="مساعد المروة" style={{width:'100%',maxWidth:760,height:'100%',maxHeight:'100dvh',background:'white',borderRadius:0,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:0,border:'none'}}>
+      <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة — خدمة العملاء</strong><button type="button" onClick={()=>setOpen(false)} aria-label="الرجوع للموقع" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>← رجوع للموقع</button></header>
       <div ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
         {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
         {!loggedClient && welcomeStep==='ask' && <div style={{alignSelf:'stretch',padding:10,border:'1px solid #bfdbfe',borderRadius:12,background:'#eff6ff',fontSize:13}}>
@@ -140,7 +141,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         <button type="submit" disabled={!question.trim()} style={{background:'#1e3a8a',color:'white',border:0,borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>إرسال</button>
       </form>
     </section>}
-    <button type="button" aria-label={open?'إغلاق مساعد المروة':'فتح مساعد المروة'} onClick={()=>setOpen(v=>!v)} style={{border:0,borderRadius:30,background:'#1e3a8a',color:'white',padding:'13px 18px',fontWeight:800,boxShadow:'0 6px 20px #0f172a55',cursor:'pointer'}}>💬 {open?'إغلاق':'اسأل المروة'}</button>
+    {!open && <button type="button" aria-label="فتح مساعد المروة" onClick={()=>setOpen(true)} style={{border:0,borderRadius:30,background:'#1e3a8a',color:'white',padding:'13px 18px',fontWeight:800,boxShadow:'0 6px 20px #0f172a55',cursor:'pointer'}}>💬 اسأل المروة</button>}
   </div>
 }
 
