@@ -73,7 +73,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const priced = (products||[]).map(p=>{
         let table=tier==='VIP'?p.pricesVIP:p.pricesB
         try{if(typeof table==='string')table=JSON.parse(table)}catch{table={}}
-        const entries=Object.entries(table||{}).filter(([qty,price])=>/^\\d+$/.test(qty)&&Number(price)>0).sort((a,b)=>Number(a[0])-Number(b[0]))
+        const entries=Object.entries(table||{}).filter(([qty,price])=>/^\d+$/.test(qty)&&Number(price)>0).sort((a,b)=>Number(a[0])-Number(b[0]))
         return {name:p.name,entries}
       }).filter(p=>p.name&&p.entries.length)
       const found=priced.filter(p=>normalized.includes(String(p.name).toLocaleLowerCase('ar'))).slice(0,5)
