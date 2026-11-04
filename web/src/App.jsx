@@ -126,6 +126,14 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
+    if(draftStep==='job'){
+      setQuestion('');
+      if(q.length<2){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'اكتب اسم الشغل كامل علشان نكمل.'}]);return}
+      setDraft(v=>({...v,jobName:q}));
+      setDraftStep(draft.pdf?'preview':'pdf');
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:draft.pdf?'تمام، راجع تفاصيل الطلب قبل الإرسال.':'تمام يا '+(loggedClient.name||'فندم')+' 👌 سجلت اسم الشغل: '+q+'. دلوقتي ارفع ملف PDF أو صورة JPG/PNG عالية الجودة.'}]);
+      return;
+    }
     if(draftStep==='confirm'){
       setQuestion('')
       if(/^(ايوه|أيوه|اه|آه|نعم|تمام|موافق|اكمل|كمل|yes|ok)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، اكتب اسم الشغل علشان نجهز ملف الطباعة.'}]);setDraftStep('job');return}
@@ -155,7 +163,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     } else if (/pdf|ملف|ارفع|تصميم/.test(normalized)) {
       answer = 'اختار المنتج والكمية واسم الشغل، وارفع ملف PDF أو صورة JPG/PNG عالية الجودة عند إرسال الطلب. إيصال الدفع اختياري للمراجعة.'
     } else if (/دفع|فودافون|انستا|تحويل|نقد/.test(normalized)) {
-      answer = 'طرق الدفع المتاحة في النظام: نقدي، فودافون كاش، إنستا باي، تحويل بنكي، وآجل حسب حساب العميل.'
+      answer = 'طرق الدفع المتاحة في بوت المروة: نقدي، فودافون كاش، إنستا باي، وتحويل بنكي.'
     } else if (/طلب|اوردر|أوردر|اطلب/.test(normalized)) {
       answer = 'ابدأ باختيار القسم ثم المنتج والكمية، واكتب اسم الشغل وارفع PDF أو صورة عالية الجودة، وبعدها راجع تفاصيل الطلب قبل الإرسال.'
     } else {
@@ -239,12 +247,12 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       </div>}
       </div>
       <div className="marwa-chat-actions" style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
-        {draftButton('➕ ابدأ طلب طباعة',beginDraft)}
-        {['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
-        {loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
+        {!draftStep&&draftButton('➕ ابدأ طلب طباعة',beginDraft)}
+        {!draftStep&&['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
+        {!draftStep&&loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
       </div>
       <form className="marwa-chat-form" onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
-        <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="اسأل عن المنتجات أو الطلبات..." maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
+        <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder={draftStep==='job'?'اكتب اسم الشغل هنا...':draftStep?'اكتب استفسارك أو استخدم أزرار الخطوة...':'اسأل عن المنتجات أو الطلبات...'} maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
         <button type="submit" disabled={!question.trim()} style={{background:'#1e3a8a',color:'white',border:0,borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>إرسال</button>
       </form>
     </section>}
