@@ -15,10 +15,24 @@ async function apiRead(resource, token) {
 }
 
 
-function SiteChatAssistant({ products, loggedClient, onMyOrders }) {
+function SiteChatAssistant({ products, categories, subCategories, loggedClient, onMyOrders }) {
   const [open, setOpen] = useState(false)
+  const [draftStep, setDraftStep] = useState('')
+  const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 أقدر أساعدك في المنتجات والأسعار وطريقة الطلب.' }])
+  const beginDraft = () => {
+    setDraft({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
+    setDraftStep(loggedClient ? 'category' : 'login')
+  }
+  const chooseDraft = (field,value,next) => {
+    setDraft(prev=>({...prev,[field]:value}))
+    setDraftStep(next)
+  }
+  const chosenProduct = products.find(p=>String(p.id)===String(draft.productId))
+  const priceTable = (()=>{try { const v=loggedClient?.type==='VIP'?chosenProduct?.pricesVIP:chosenProduct?.pricesB;return typeof v==='string'?JSON.parse(v):v||{} }catch{return {}}})()
+  const availableQuantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(q=>Number(priceTable[q])>0)
+  const draftButton = (label,callback) => <button type="button" key={label} onClick={callback} style={{display:'block',width:'100%',textAlign:'right',padding:'9px 11px',margin:'5px 0',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer'}}>{label}</button>
   const reply = (raw) => {
     const q = raw.trim()
     if (!q) return
@@ -47,7 +61,20 @@ function SiteChatAssistant({ products, loggedClient, onMyOrders }) {
       <div aria-live="polite" style={{flex:1,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
         {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
       </div>
+      {draftStep && <div style={{padding:'10px 12px',borderTop:'1px solid #e2e8f0',maxHeight:215,overflowY:'auto',fontSize:13}}>
+        <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
+        {draftStep==='login' && <p>سجّل دخول العميل أولاً علشان نستخدم فئتك السعرية ونحافظ على خصوصية طلباتك.</p>}
+        {draftStep==='category' && categories.map(c=>draftButton(c.name,()=>chooseDraft('categoryId',String(c.id),'subcategory')))}
+        {draftStep==='subcategory' && subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>chooseDraft('subCategoryId',String(c.id),'product')))}
+        {draftStep==='product' && products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>chooseDraft('productId',String(p.id),'quantity')))}
+        {draftStep==='quantity' && (availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>chooseDraft('quantity',String(q),'job'))):<p>لا توجد أسعار متاحة للمنتج وفئة حسابك.</p>)}
+        {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim())setDraftStep('pdf')}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: ملف PDF</button></form>}
+        {draftStep==='pdf' && <div><p>ملف PDF إلزامي، ولا يتم إنشاء طلب رسمي قبل مراجعة الموظف.</p><input aria-label="ملف الطباعة PDF" type="file" accept=".pdf,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f && (f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')) && f.size<=20*1024*1024){setDraft(v=>({...v,pdf:f}));setDraftStep('preview')}else if(f)alert('اختار ملف PDF أقل من 20 ميجابايت')}}/></div>}
+        {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>دي معاينة فقط. المسودة لم تُرسل للموظف ولم يُرفع الملف للسيرفر بعد. استكمال الربط الآمن بالمراجعة مطلوب قبل استقبال الطلبات من الشات.</p></div>}
+        {draftButton('إلغاء المسودة',()=>setDraftStep(''))}
+      </div>}
       <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
+        {draftButton('➕ ابدأ طلب طباعة',beginDraft)}
         {['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
         {loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
       </div>
@@ -734,7 +761,7 @@ export default function App() {
         {selectedSub && (<div><button onClick={() => setSelectedSub(null)} style={{...btnStyle, background: '#6b7280', color: 'white'}}>⬅️ رجوع</button><h2>📁 {selectedSub.name}</h2><input aria-label="بحث في منتجات القسم" placeholder="🔎 ابحث عن منتج بالاسم" value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)} style={{width:'100%',maxWidth:440,padding:'12px 14px',border:'1px solid #cbd5e1',borderRadius:10,marginBottom:12,boxSizing:'border-box',fontSize:15}} /><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop:'15px' }}>{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).map(p => <ProductCard key={p.id} product={p} />)}{products.filter(p => Number(p.subCategoryId) === Number(selectedSub.id) && p.name?.toLocaleLowerCase('ar').includes(catalogSearch.trim().toLocaleLowerCase('ar'))).length===0 && <div style={{background:'white', padding:'30px', borderRadius:'12px', textAlign:'center', color:'#999'}}>لا يوجد منتجات</div>}</div></div>)}
       </div>
 
-      {!showAdmin && <SiteChatAssistant products={products} loggedClient={loggedClient} onMyOrders={()=>setShowMyOrders(true)} />}
+      {!showAdmin && <SiteChatAssistant products={products} categories={categories} subCategories={subCategories} loggedClient={loggedClient} onMyOrders={()=>setShowMyOrders(true)} />}
       {showMyOrders && <div style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.85)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:400, padding:'10px'}}>
         <div style={{background:'white', width:'95%', maxWidth:'900px', maxHeight:'92vh', borderRadius:'16px', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px rgba(0,0,0,0.4)'}}>
           <div style={{background:'#0f172a', color:'white', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, zIndex:20}}><div style={{fontWeight:900}}>📦 طلباتي - {loggedClient?.name} | مطبعة المروة</div><button onClick={()=> setShowMyOrders(false)} style={{background:'white', color:'#0f172a', border:'none', padding:'7px 16px', fontWeight:900, cursor:'pointer', borderRadius:'20px'}}>X اغلاق</button></div>
