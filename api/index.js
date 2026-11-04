@@ -261,7 +261,8 @@ export default async function handler(req, res) {
       if (!order) return res.status(404).json({error:'الأوردر غير موجود'});
       if (!admin&&order.customer_id!==auth.user.id) return res.status(403).json({error:'غير مسموح'});
       if (!order.details?.paymentProofPath) return res.status(404).json({error:'لا يوجد مرفق'});
-      const {data:signed,error:signError}=await db.storage.from('customer-order-files').createSignedUrl(order.details.paymentProofPath,60);
+      const proofBucket=order.details?.source==='website_chat'?'website-chat-pdfs':'customer-order-files';
+      const {data:signed,error:signError}=await db.storage.from(proofBucket).createSignedUrl(order.details.paymentProofPath,60);
       if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر فتح الصورة'});
       return res.status(200).json({url:signed.signedUrl});
     }
