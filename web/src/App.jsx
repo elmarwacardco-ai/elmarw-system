@@ -115,7 +115,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const chosenProduct = products.find(p=>String(p.id)===String(draft.productId))
   const priceTable = (()=>{try { const v=loggedClient?.type==='VIP'?chosenProduct?.pricesVIP:chosenProduct?.pricesB;return typeof v==='string'?JSON.parse(v):v||{} }catch{return {}}})()
   const availableQuantities = [1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(q=>Number(priceTable[q])>0)
-  const draftButton = (label,callback) => <button type="button" key={label} onClick={callback} style={{display:'block',width:'100%',textAlign:'right',padding:'9px 11px',margin:'5px 0',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer'}}>{label}</button>
+  const draftButton = (label,callback) => <button className="marwa-chat-choice" type="button" key={label} onClick={callback}>{label}<span aria-hidden="true">‹</span></button>
   const showChatMenu = () => {setChatMode('menu');setDraftStep('')}
   const showPriceCategories = () => {setChatMode('priceCategories');setDraftStep('');setMessages(prev=>[...prev,{from:'bot',text:'اختار القسم اللي تحب تعرف أسعاره 👇'}])}
   const showPriceSubcategories = id => {setDraft(v=>({...v,categoryId:String(id)}));setChatMode('priceSubcategories')}
@@ -166,11 +166,38 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     setQuestion('')
   }
   useEffect(()=>{if(!open)return;const previous=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.body.style.overflow=previous}},[open])
-  return <div dir="rtl" style={open?{position:'fixed',inset:0,zIndex:350,fontFamily:'inherit',background:'#0f172a',display:'flex',justifyContent:'center',alignItems:'stretch',padding:0}:{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
-    {open && <section role="dialog" aria-label="مساعد المروة" style={{width:'100%',maxWidth:760,height:'100%',maxHeight:'100dvh',background:'white',borderRadius:0,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:0,border:'none'}}>
-      <header style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>💬 مساعد المروة — خدمة العملاء</strong><button type="button" onClick={()=>setOpen(false)} aria-label="الرجوع للموقع" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>← رجوع للموقع</button></header>
-      <div ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
-        {messages.map((m,i)=><div key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
+  return <><style>{`
+    .marwa-chat,.marwa-chat *{box-sizing:border-box}
+    .marwa-chat{font-family:Tahoma,Arial,sans-serif!important;color:#172b4d}
+    .marwa-chat-dialog{background:#f4f7fc!important}
+    .marwa-chat-header{background:linear-gradient(115deg,#071c52,#124ba6)!important;min-height:76px;flex-shrink:0;padding:13px 17px!important;gap:12px;box-shadow:0 3px 15px #0b2a611a}
+    .marwa-chat-title{display:flex;align-items:center;gap:11px;min-width:0}
+    .marwa-chat-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:#ffffff20;font-size:23px;flex-shrink:0}
+    .marwa-chat-title strong{font-size:17px;display:block;line-height:1.4}
+    .marwa-chat-title small{display:block;color:#c6defe;font-size:11px;margin-top:3px}
+    .marwa-chat-close{font-size:13px!important;font-weight:700;border:1px solid #ffffff50!important;border-radius:11px;padding:9px 11px;white-space:nowrap;background:#ffffff14!important}
+    .marwa-chat-messages{background:linear-gradient(#f4f7fc,#f9fbff);padding:17px 13px 20px!important;gap:13px!important;overscroll-behavior:contain}
+    .marwa-chat-bubble{box-shadow:0 3px 10px #142d4d0c;overflow-wrap:anywhere;word-break:break-word;font-size:14px!important;line-height:1.9!important;padding:12px 15px!important;max-width:88%!important}
+    .marwa-chat-bubble.bot{border:1px solid #e3eaf5;border-radius:16px 16px 5px 16px!important;background:white!important;color:#263a56}
+    .marwa-chat-bubble.user{border:1px solid #c4d8ff;border-radius:16px 16px 16px 5px!important;background:#e6efff!important;color:#123e88}
+    .marwa-chat-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:48px;text-align:right;padding:12px 15px;margin:8px 0;background:white;border:1px solid #d8e4f6;border-right:4px solid #2463c5;border-radius:13px;cursor:pointer;color:#173a70;font-weight:700;font-size:14px;box-shadow:0 2px 8px #173b6e0b;transition:background .15s,border-color .15s}
+    .marwa-chat-choice span{font-size:24px;color:#3976d2;line-height:1}
+    .marwa-chat-choice:active,.marwa-chat-choice:hover{background:#edf5ff;border-color:#8db9ff}
+    .marwa-chat-messages input[type=file]{max-width:100%;font-size:12px;color:#334155}
+    .marwa-chat-messages p{overflow-wrap:anywhere;line-height:1.85}
+    .marwa-chat-actions{background:white;border-top:1px solid #e5ecf6;padding:9px 12px!important;gap:7px!important;flex-shrink:0}
+    .marwa-chat-actions>.marwa-chat-choice{flex:1 1 100%;margin:0;min-height:43px;background:#eaf2ff}
+    .marwa-chat-actions>button:not(.marwa-chat-choice){background:#f5f8fe!important;border-color:#dbe7f8!important;color:#24518c;font-weight:700;min-height:34px}
+    .marwa-chat-form{background:white;border-top:1px solid #e5ecf6;padding:11px 12px max(12px,env(safe-area-inset-bottom))!important;gap:9px!important;flex-shrink:0}
+    .marwa-chat-form input{background:#f7faff;border:1px solid #cfdcf0!important;border-radius:13px!important;font-size:14px;min-height:45px}
+    .marwa-chat-form button{background:#1454b7!important;border-radius:12px!important;font-weight:800;padding:10px 17px!important}
+    .marwa-chat-form button:disabled{opacity:.5}
+    @media(max-width:600px){.marwa-chat-header{min-height:69px}.marwa-chat-title strong{font-size:15px}.marwa-chat-logo{width:37px;height:37px}.marwa-chat-messages{padding:12px 11px!important}.marwa-chat-bubble{max-width:94%!important}.marwa-chat-actions{max-height:126px;overflow-y:auto}.marwa-chat-close{font-size:12px!important}}
+  `}</style><div className="marwa-chat" dir="rtl" style={open?{position:'fixed',inset:0,zIndex:350,fontFamily:'inherit',background:'#0f172a',display:'flex',justifyContent:'center',alignItems:'stretch',padding:0}:{position:'fixed',bottom:18,left:18,zIndex:350,fontFamily:'inherit'}}>
+    {open && <section className="marwa-chat-dialog" role="dialog" aria-label="مساعد المروة" style={{width:'100%',maxWidth:760,height:'100%',maxHeight:'100dvh',background:'white',borderRadius:0,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:0,border:'none'}}>
+      <header className="marwa-chat-header" style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><div className="marwa-chat-title"><span className="marwa-chat-logo">💬</span><div><strong>مساعد المروة</strong><small>خدمة العملاء • معاك خطوة بخطوة</small></div></div><button type="button" onClick={()=>setOpen(false)} aria-label="الرجوع للموقع" className="marwa-chat-close" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>← رجوع للموقع</button></header>
+      <div className="marwa-chat-messages" ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
+        {messages.map((m,i)=><div className={'marwa-chat-bubble '+m.from} key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
         {!loggedClient && welcomeStep==='ask' && <div style={{alignSelf:'stretch',padding:10,border:'1px solid #bfdbfe',borderRadius:12,background:'#eff6ff',fontSize:13}}>
           <strong>👋 أهلاً بيك! هل دي أول مرة تتعامل مع المروة؟</strong>
           <p style={{margin:'5px 0 9px'}}>اختار علشان نكمل معاك ونعرض الأسعار المناسبة.</p>
@@ -202,18 +229,18 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep!=='payment'&&draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       </div>
-      <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
+      <div className="marwa-chat-actions" style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
         {draftButton('➕ ابدأ طلب طباعة',beginDraft)}
         {['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
         {loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
       </div>
-      <form onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
+      <form className="marwa-chat-form" onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
         <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="اسأل عن المنتجات أو الطلبات..." maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
         <button type="submit" disabled={!question.trim()} style={{background:'#1e3a8a',color:'white',border:0,borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>إرسال</button>
       </form>
     </section>}
     {!open && <button type="button" aria-label="فتح مساعد المروة" onClick={()=>setOpen(true)} style={{border:0,borderRadius:30,background:'#1e3a8a',color:'white',padding:'13px 18px',fontWeight:800,boxShadow:'0 6px 20px #0f172a55',cursor:'pointer'}}>💬 اسأل المروة</button>}
-  </div>
+  </div></>
 }
 
 export default function App() {
