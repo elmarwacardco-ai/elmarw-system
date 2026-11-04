@@ -278,7 +278,8 @@ export default async function handler(req, res) {
       if (orderError||!order) return res.status(404).json({error:'الأوردر غير موجود'});
       if (!admin && order.customer_id!==auth.user.id) return res.status(403).json({error:'غير مسموح بتحميل هذا الملف'});
       if (!order.file_path) return res.status(404).json({error:'ملف الطلب غير محفوظ'});
-      const {data:signed,error:signError}=await db.storage.from('customer-order-files').createSignedUrl(order.file_path,120,{download:order.details?.fileName||'order-file'});
+      const fileBucket=order.details?.source==='website_chat'?'website-chat-pdfs':'customer-order-files';
+      const {data:signed,error:signError}=await db.storage.from(fileBucket).createSignedUrl(order.file_path,120,{download:order.details?.fileName||'order-file'});
       if (signError||!signed?.signedUrl) return res.status(500).json({error:'تعذر إنشاء رابط تحميل الملف'});
       return res.status(200).json({url:signed.signedUrl});
     }
