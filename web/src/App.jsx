@@ -129,6 +129,28 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
     const normalizeName=v=>String(v||'').toLocaleLowerCase('ar').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').trim();
+    // Conversational shortcut: understand a product and a quantity in one sentence.
+    const natural=normalizeName(q).replace(/[^\\p{L}\\p{N} ]/gu,' ').replace(/\\s+/g,' ').trim();
+    const digitInput=natural.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+    const quantityMatch=digitInput.match(/\\b(1000|2000|3000|4000|5000|6000|7000|8000|9000|10000)\\b/);
+    const requestedQuantity=quantityMatch?Number(quantityMatch[1]):0;
+    const matchedProducts=(products||[]).filter(p=>{
+      const name=normalizeName(p.name).replace(/[^\\p{L}\\p{N} ]/gu,' ').trim();
+      return name.length>=3 && natural.includes(name);
+    }).sort((a,b)=>String(b.name).length-String(a.name).length);
+    if(matchedProducts.length && !['job','pdf','preview','payment'].includes(draftStep)){
+      const p=matchedProducts[0];
+      const table=(()=>{try{const v=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof v==='string'?JSON.parse(v):v||{}}catch{return {}}})();
+      const quantities=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
+      setDraft(v=>({...v,categoryId:String(p.categoryId||''),subCategoryId:String(p.subCategoryId||''),productId:String(p.id),quantity:requestedQuantity&&quantities.includes(requestedQuantity)?String(requestedQuantity):''}));
+      setQuestion('');
+      if(requestedQuantity&&quantities.includes(requestedQuantity)){
+        setDraftStep('confirm');setChatMode('menu');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام 👌 '+p.name+'، '+requestedQuantity+' نسخة بسعر '+table[requestedQuantity]+' جنيه لفئة حسابك. تحب نكمل الطلب؟'}]);return;
+      }
+      setDraftStep('quantity');setChatMode('menu');
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:quantities.length?'تمام، لقيت '+p.name+' 👌 محتاج كام نسخة؟\\n'+quantities.map(n=>n+' نسخة').join('، '):'لقيت المنتج، بس مفيش سعر متاح لفئة حسابك حاليًا.'}]);return;
+    }
     const answerChoice=(items,label)=>{
       const digits=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));const n=/^\d+$/.test(digits)?Number(digits):0;const found=(n>=1&&n<=items.length?items[n-1]:null)||items.find(x=>normalizeName(x.name)===normalizeName(q))||items.find(x=>normalizeName(x.name).includes(normalizeName(q))&&q.length>=2);
       if(!found){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'مش لاقي '+label+' ده. اختار بالاسم أو الرقم من القائمة:\n'+chatOptions(items)}]);setQuestion('');return null}
