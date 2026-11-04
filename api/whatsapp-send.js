@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+  // WhatsApp is retired in favor of the website chat. Keep legacy data and routes intact.
+  if (process.env.ENABLE_LEGACY_WHATSAPP_BOT !== 'true') return res.status(200).json({ status: 'disabled', channel: 'website-chat' });
   if (req.method !== 'POST') return res.status(405).end();
   const key = process.env.WHATSAPP_WORKER_SECRET;
   const authorization = req.headers.authorization;
