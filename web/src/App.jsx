@@ -21,6 +21,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [welcomeStep,setWelcomeStep]=useState('ask')
   const [chatMode,setChatMode]=useState('menu')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
+  const [lastDraftId,setLastDraftId] = useState('')
   const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
@@ -39,16 +40,22 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const response=await fetch('/api/website-chat-drafts.js',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({categoryId:draft.categoryId,subcategoryId:draft.subCategoryId,productId:draft.productId,quantity:draft.quantity,jobName:draft.jobName,fileName:draft.pdf.name,fileBase64:base64})})
       const result=await response.json().catch(()=>({}))
       if(!response.ok)throw new Error(result.error||'تعذر إرسال المسودة')
-      setMessages(prev=>[...prev,{from:'bot',text:'تم استلام مسودة الشغل بنجاح ✅ رقم المسودة: '+result.draft.id+' — الطلب مش رسمي لحد ما الموظف يراجعه ويعتمده.'}])
-      setDraftStep('');setChatMode('menu')
+      setLastDraftId(String(result.draft.id))
+      setMessages(prev=>[...prev,{from:'bot',text:'✅ تم إنشاء مسودة طلبك واستلام ملف التصميم بنجاح. رقم المسودة: '+result.draft.id+'\nالطلب في انتظار مراجعة موظف المروة، ولسه ما اتعتمدش كأوردر رسمي. تحب تعرف طرق الدفع المتاحة؟'}])
+      setDraftStep('payment');setChatMode('menu')
     }catch(e){setDraftError(e.message)}finally{setDraftSubmitting(false)}
   }
   const beginDraft = () => {
     if(!loggedClient){setWelcomeStep('ask');return}
-    setDraftError('')
+    setDraftError('');setLastDraftId('')
     setDraft({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
     setDraftStep(loggedClient ? 'category' : 'login')
     setMessages(prev=>[...prev,{from:'bot',text:'تمام يا '+(loggedClient.name||'فندم')+' 😊 هنجهز طلبك سوا. اختار نوع الشغل الأول، وبعدها هسألك عن الكمية وملف التصميم.'}])
+  }
+  const confirmQuantity = (quantity) => {
+    setDraft(v=>({...v,quantity:String(quantity)}))
+    setDraftStep('confirm')
+    setMessages(prev=>[...prev,{from:'bot',text:'حضرتك اخترت '+(chosenProduct?.name||'المنتج')+' بكمية '+quantity+' نسخة، والسعر '+priceTable[quantity]+' جنيه لفئة حسابك. تحب نكمل الأوردر؟'}])
   }
   const chooseDraft = (field,value,next) => {
     setDraft(prev=>({...prev,[field]:value}))
@@ -70,6 +77,12 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
+    if(draftStep==='confirm'){
+      setQuestion('')
+      if(/^(ايوه|أيوه|اه|آه|نعم|تمام|موافق|اكمل|كمل|yes|ok)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، اكتب اسم الشغل علشان نجهز ملف الطباعة.'}]);setDraftStep('job');return}
+      if(/^(لا|لأ|غير|تغيير|no)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'ولا يهمك، اختار الكمية المناسبة تاني.'}]);setDraftStep('quantity');return}
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تحب نكمل الطلب بالمنتج والكمية دول؟ اختار أيوه أو تغيير الكمية.'}]);return
+    }
     if(/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');showPriceCategories();return}
     if(/طلب جديد|اطبع|عايز اطلب|اعمل طلب|عاوز اطلب|اطبعلي/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');beginDraft();return}
     if(/طلب|اوردر|أوردر/.test(normalized)&&/حالة|متابع|فين|وصل|قديم|طلباتي/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'حاضر يا '+(loggedClient.name||'فندم')+' 📦 اضغط «عرض طلباتي» علشان تشوف الطلبات المرتبطة بحسابك وحالة كل واحد. بيانات العملاء التانيين مش هتظهر.'}]);setQuestion('');setChatMode('menu');return}
@@ -122,7 +135,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {chatMode==='priceCategories' && <><strong>اختار القسم</strong>{categories.map(c=>draftButton(c.name,()=>showPriceSubcategories(c.id)))}</>}
         {chatMode==='priceSubcategories' && <><strong>اختار القسم الفرعي</strong>{subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>showPriceProducts(c.id)))}</>}
         {chatMode==='priceProducts' && <><strong>اختار المنتج</strong>{products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>showPriceProduct(p.id)))}</>}
-        {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{setDraft(v=>({...v,quantity:String(q)}));setDraftStep('job');setMessages(prev=>[...prev,{from:'bot',text:'تم اختيار '+q+' نسخة من '+chosenProduct?.name+'. اكتب اسم الشغل علشان نكمل طلب الطباعة.'}])})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
+        {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{confirmQuantity(q)})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
         {chatMode!=='menu'&&draftButton('↩ رجوع للقائمة الرئيسية',showChatMenu)}
       </div>}
       {draftStep && <div style={{padding:'10px 12px',fontSize:13}}>
@@ -131,11 +144,13 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='category' && categories.map(c=>draftButton(c.name,()=>chooseDraft('categoryId',String(c.id),'subcategory')))}
         {draftStep==='subcategory' && subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>chooseDraft('subCategoryId',String(c.id),'product')))}
         {draftStep==='product' && products.filter(p=>String(p.subCategoryId)===draft.subCategoryId).map(p=>draftButton(p.name,()=>chooseDraft('productId',String(p.id),'quantity')))}
-        {draftStep==='quantity' && (availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>chooseDraft('quantity',String(q),'job'))):<p>لا توجد أسعار متاحة للمنتج وفئة حسابك.</p>)}
-        {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim()){setDraftStep('pdf');setDraftError('');setMessages(prev=>[...prev,{from:'bot',text:'تسلم يا '+(loggedClient?.name||'فندم')+' 🙌 ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة (لحد 3 ميجابايت).'}])}}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: ملف PDF</button></form>}
+        {draftStep==='quantity' && (availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>confirmQuantity(q))):<p>لا توجد أسعار متاحة للمنتج وفئة حسابك.</p>)}
+        {draftStep==='confirm' && <div><p>🧾 حضرتك اخترت <b>{chosenProduct?.name}</b> — <b>{draft.quantity} نسخة</b> بسعر <b>{priceTable[draft.quantity]} جنيه</b> لفئة {loggedClient?.type==='VIP'?'VIP':'B'}. تحب نكمل الأوردر؟</p>{draftButton('✅ أيوه، كمل الأوردر',()=>{setDraftStep('job');setMessages(prev=>[...prev,{from:'user',text:'أيوه، كمل الأوردر'},{from:'bot',text:'تمام يا فندم، اكتب اسم الشغل علشان نكمل.'}])})}{draftButton('🔄 لا، غيّر الكمية',()=>{setDraftStep('quantity');setMessages(prev=>[...prev,{from:'user',text:'تغيير الكمية'},{from:'bot',text:'اختار الكمية الجديدة 👇'}])})}{draftButton('↩ تغيير المنتج',()=>{setDraftStep('product');setDraft(v=>({...v,quantity:''}))})}</div>}
+        {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim()){setDraftStep('pdf');setDraftError('');setMessages(prev=>[...prev,{from:'bot',text:'تسلم يا '+(loggedClient?.name||'فندم')+' 🙌 ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة (لحد 3 ميجابايت).'}])}}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: رفع ملف التصميم</button></form>}
         {draftStep==='pdf' && <div><p>📎 ارفع تصميم الطباعة بصيغة PDF أو صورة JPG/PNG عالية الجودة، بحد أقصى 3 ميجابايت. الأفضل ملف أصلي واضح، والصور الضعيفة ممكن تحتاج مراجعة من الموظف.</p><input aria-label="ملف التصميم" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;setDraftError('');if(!/\.(pdf|jpe?g|png)$/i.test(f.name)){setDraftError('❌ اختار PDF أو صورة JPG/PNG فقط.');e.target.value='';return}if(f.size>3*1024*1024){setDraftError('❌ الملف أكبر من 3 ميجابايت.');e.target.value='';return}if(!f.size){setDraftError('❌ الملف فاضي.');e.target.value='';return}setDraft(v=>({...v,pdf:f}));setDraftStep('preview');setMessages(prev=>[...prev,{from:'bot',text:'وصل الملف '+f.name+' ✅ راجع بيانات الشغل واضغط إرسال المسودة للمراجعة.'}])}}/>{draftError&&<p role="alert" style={{background:'#fee2e2',color:'#991b1b',padding:12,borderRadius:9,fontWeight:700}}>{draftError}</p>}</div>}
         {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>اضغط إرسال المسودة لرفع التصميم وحفظ الطلب للمراجعة. لن يتم إصدار أوردر رسمي إلا بعد اعتماد الموظف.</p><button type="button" disabled={draftSubmitting} onClick={submitDraft} style={{background:'#16a34a',color:'white',padding:'10px 15px',border:0,borderRadius:9,cursor:'pointer'}}>{draftSubmitting?'جاري إرسال المسودة...':'إرسال المسودة للمراجعة'}</button>{draftError&&<p role="alert" style={{color:'#b91c1c'}}>{draftError}</p>}</div>}
-        {draftButton('إلغاء المسودة',()=>setDraftStep(''))}
+        {draftStep==='payment' && <div><p>💳 طرق الدفع المتاحة لطلبك:</p>{['نقدي','فودافون كاش','إنستا باي','تحويل بنكي','آجل (حسب موافقة الإدارة)'].map(method=>draftButton(method,()=>setMessages(prev=>[...prev,{from:'user',text:method},{from:'bot',text:'تم اختيار '+method+' للاستفسار. الدفع لسه غير مسجل، وهيتم تأكيد المبلغ وطريقة التحصيل مع موظف المروة بعد مراجعة المسودة رقم '+lastDraftId+'.'}])))}<p style={{color:'#92400e'}}>⚠️ اختيار طريقة الدفع هنا للتوضيح فقط، ولا يعتبر سدادًا أو تأكيدًا للطلب.</p>{draftButton('🧾 طلب جديد',beginDraft)}{draftButton('↩ الرجوع للقائمة',()=>setDraftStep(''))}</div>}
+        {draftStep!=='payment'&&draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       </div>
       <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
