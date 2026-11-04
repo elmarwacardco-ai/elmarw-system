@@ -22,6 +22,10 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [chatMode,setChatMode]=useState('menu')
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [lastDraftId,setLastDraftId] = useState('')
+  const [paymentChoice,setPaymentChoice] = useState('')
+  const [paymentReceipt,setPaymentReceipt] = useState(null)
+  const [paymentBusy,setPaymentBusy] = useState(false)
+  const [paymentFeedback,setPaymentFeedback] = useState('')
   const [draftError,setDraftError] = useState('')
   const [draft, setDraft] = useState({ categoryId:'', subCategoryId:'', productId:'', quantity:'', jobName:'', pdf:null })
   const [question, setQuestion] = useState('')
@@ -40,10 +44,23 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const response=await fetch('/api/website-chat-drafts.js',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({categoryId:draft.categoryId,subcategoryId:draft.subCategoryId,productId:draft.productId,quantity:draft.quantity,jobName:draft.jobName,fileName:draft.pdf.name,fileBase64:base64})})
       const result=await response.json().catch(()=>({}))
       if(!response.ok)throw new Error(result.error||'تعذر إرسال المسودة')
-      setLastDraftId(String(result.draft.id))
+      setLastDraftId(String(result.draft.id));setPaymentChoice('');setPaymentReceipt(null);setPaymentFeedback('')
       setMessages(prev=>[...prev,{from:'bot',text:'✅ تم إنشاء مسودة طلبك واستلام ملف التصميم بنجاح. رقم المسودة: '+result.draft.id+'\nالطلب في انتظار مراجعة موظف المروة، ولسه ما اتعتمدش كأوردر رسمي. تحب تعرف طرق الدفع المتاحة؟'}])
       setDraftStep('payment');setChatMode('menu')
     }catch(e){setDraftError(e.message)}finally{setDraftSubmitting(false)}
+  }
+  const saveDraftPayment=async(method,receipt=null)=>{
+    if(!lastDraftId)return setPaymentFeedback('❌ رقم المسودة مش موجود');
+    setPaymentBusy(true);setPaymentFeedback('⏳ جاري حفظ بيانات الدفع...');
+    try{
+      const token=sessionStorage.getItem('elmarw_customer_token');if(!token)throw new Error('سجل دخولك من جديد');
+      let receiptBase64;
+      if(receipt){receiptBase64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('تعذر قراءة الإيصال'));reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.readAsDataURL(receipt)})}
+      const response=await fetch('/api/website-chat-drafts.js?action=payment',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:lastDraftId,method,receiptName:receipt?.name,receiptBase64})});
+      const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'تعذر حفظ اختيار الدفع');
+      setPaymentChoice(method);setPaymentFeedback('✅ تم تسجيل طريقة الدفع '+method+(receipt?' وإرفاق الإيصال':'')+' للمراجعة. لم يتم تأكيد سداد أي مبلغ.');
+      setMessages(prev=>[...prev,{from:'bot',text:'تمام يا فندم، حفظنا طريقة الدفع '+method+(receipt?' واستلمنا الإيصال':'')+'. الموظف هيراجع المسودة وبيانات الدفع قبل تأكيد الطلب.'}]);
+    }catch(error){setPaymentFeedback('❌ '+error.message)}finally{setPaymentBusy(false)}
   }
   const beginDraft = () => {
     if(!loggedClient){setWelcomeStep('ask');return}
@@ -149,7 +166,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim()){setDraftStep('pdf');setDraftError('');setMessages(prev=>[...prev,{from:'bot',text:'تسلم يا '+(loggedClient?.name||'فندم')+' 🙌 ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة (لحد 3 ميجابايت).'}])}}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: رفع ملف التصميم</button></form>}
         {draftStep==='pdf' && <div><p>📎 ارفع تصميم الطباعة بصيغة PDF أو صورة JPG/PNG عالية الجودة، بحد أقصى 3 ميجابايت. الأفضل ملف أصلي واضح، والصور الضعيفة ممكن تحتاج مراجعة من الموظف.</p><input aria-label="ملف التصميم" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;setDraftError('');if(!/\.(pdf|jpe?g|png)$/i.test(f.name)){setDraftError('❌ اختار PDF أو صورة JPG/PNG فقط.');e.target.value='';return}if(f.size>3*1024*1024){setDraftError('❌ الملف أكبر من 3 ميجابايت.');e.target.value='';return}if(!f.size){setDraftError('❌ الملف فاضي.');e.target.value='';return}setDraft(v=>({...v,pdf:f}));setDraftStep('preview');setMessages(prev=>[...prev,{from:'bot',text:'وصل الملف '+f.name+' ✅ راجع بيانات الشغل واضغط إرسال المسودة للمراجعة.'}])}}/>{draftError&&<p role="alert" style={{background:'#fee2e2',color:'#991b1b',padding:12,borderRadius:9,fontWeight:700}}>{draftError}</p>}</div>}
         {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>اضغط إرسال المسودة لرفع التصميم وحفظ الطلب للمراجعة. لن يتم إصدار أوردر رسمي إلا بعد اعتماد الموظف.</p><button type="button" disabled={draftSubmitting} onClick={submitDraft} style={{background:'#16a34a',color:'white',padding:'10px 15px',border:0,borderRadius:9,cursor:'pointer'}}>{draftSubmitting?'جاري إرسال المسودة...':'إرسال المسودة للمراجعة'}</button>{draftError&&<p role="alert" style={{color:'#b91c1c'}}>{draftError}</p>}</div>}
-        {draftStep==='payment' && <div><p>💳 طرق الدفع المتاحة لطلبك:</p>{['نقدي','فودافون كاش','إنستا باي','تحويل بنكي','آجل (حسب موافقة الإدارة)'].map(method=>draftButton(method,()=>setMessages(prev=>[...prev,{from:'user',text:method},{from:'bot',text:'تم اختيار '+method+' للاستفسار. الدفع لسه غير مسجل، وهيتم تأكيد المبلغ وطريقة التحصيل مع موظف المروة بعد مراجعة المسودة رقم '+lastDraftId+'.'}])))}<p style={{color:'#92400e'}}>⚠️ اختيار طريقة الدفع هنا للتوضيح فقط، ولا يعتبر سدادًا أو تأكيدًا للطلب.</p>{draftButton('🧾 طلب جديد',beginDraft)}{draftButton('↩ الرجوع للقائمة',()=>setDraftStep(''))}</div>}
+        {draftStep==='payment' && <div><p>💳 مسودة رقم {lastDraftId}. اختار طريقة الدفع اللي تناسبك:</p>{['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'].map(method=>draftButton(method,()=>{setPaymentChoice(method);setPaymentReceipt(null);setPaymentFeedback('');if(['نقدي','آجل'].includes(method))saveDraftPayment(method)}))}{paymentChoice&&['فودافون كاش','انستا باي','تحويل بنكي'].includes(paymentChoice)&&<div style={{background:'#eff6ff',padding:12,borderRadius:10}}><p>اخترت {paymentChoice}. تقدر تسجل الطريقة دلوقتي أو ترفق إيصال التحويل (اختياري).</p><input aria-label="إيصال التحويل" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;if(!/\.(pdf|jpe?g|png)$/i.test(f.name)||!f.size||f.size>3*1024*1024){setPaymentFeedback('❌ اختار إيصال PDF أو JPG/PNG أقل من 3 ميجابايت');e.target.value='';return}setPaymentReceipt(f);setPaymentFeedback('')}}/>{draftButton(paymentBusy?'جاري الحفظ...':'💾 حفظ طريقة الدفع'+(paymentReceipt?' والإيصال':''),()=>{if(!paymentBusy)saveDraftPayment(paymentChoice,paymentReceipt)})}</div>}{paymentFeedback&&<p role="status" style={{padding:10,borderRadius:8,background:paymentFeedback.startsWith('❌')?'#fee2e2':'#ecfdf5',whiteSpace:'pre-wrap'}}>{paymentFeedback}</p>}<p style={{color:'#92400e'}}>اختيار الطريقة أو رفع إيصال لا يثبت استلام المبلغ. الموظف وحده يؤكد التحصيل.</p>{draftButton('🧾 طلب جديد',beginDraft)}{draftButton('↩ الرجوع للقائمة',()=>setDraftStep(''))}</div>}
         {draftStep!=='payment'&&draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       </div>
