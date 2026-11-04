@@ -53,6 +53,16 @@ export default async function handler(req,res) {
     if(signError||!signed?.signedUrl)return res.status(503).json({error:'تعذر فتح الملف'});
     return res.status(200).json({url:signed.signedUrl});
   }
+  if(req.method==='POST' && String(req.query?.action||'')==='review-update'){
+    const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+    if(adminError||!admin)return res.status(403).json({error:'غير مصرح بتعديل مسودات البوت'});
+    const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+    const draftId=String(b.draftId||''),method=String(b.paymentMethod||'');
+    if(!/^[0-9a-f-]{36}$/i.test(draftId)||!['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].includes(method))return res.status(400).json({error:'بيانات التعديل غير صحيحة'});
+    const {data,error}=await db.from('website_chat_drafts').update({payment_method:method,updated_at:new Date().toISOString()}).eq('id',draftId).in('status',['pending_review','in_review']).select('id,payment_method').maybeSingle();
+    if(error||!data)return res.status(409).json({error:'تعذر حفظ طريقة الدفع؛ ربما تم اعتماد الطلب'});
+    return res.status(200).json({saved:true,paymentMethod:data.payment_method});
+  }
   if(req.method==='POST' && String(req.query?.action||'')==='approve'){
     const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
     if(adminError||!admin)return res.status(403).json({error:'غير مصرح باعتماد الطلب'});
