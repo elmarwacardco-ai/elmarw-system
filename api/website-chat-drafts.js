@@ -10,10 +10,40 @@ export default async function handler(req,res) {
   const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
   const {data:auth,error:authError}=await db.auth.getUser(token);
   if(authError||!auth?.user)return res.status(401).json({error:'جلسة الدخول غير صالحة'});
+  if(req.method==='POST' && String(req.query?.action||'')==='payment'){
+    const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+    const draftId=String(b.draftId||''),method=String(b.method||'');
+    const allowed=['نقدي','فودافون كاش','انستا باي','تحويل بنكي','آجل'];
+    if(!/^[0-9a-f-]{36}$/i.test(draftId)||!allowed.includes(method))return res.status(400).json({error:'بيانات طريقة الدفع غير صحيحة'});
+    const {data:draft,error:readError}=await db.from('website_chat_drafts').select('id,status,payment_receipt_path').eq('id',draftId).eq('customer_id',auth.user.id).maybeSingle();
+    if(readError||!draft)return res.status(404).json({error:'المسودة غير موجودة في حسابك'});
+    if(draft.status!=='pending_review')return res.status(409).json({error:'المسودة تحت المراجعة أو تم اعتمادها؛ تواصل مع خدمة العملاء'});
+    let receiptPath=null,receiptName=null;
+    if(b.receiptBase64||b.receiptName){
+      if(!['فودافون كاش','انستا باي','تحويل بنكي'].includes(method))return res.status(400).json({error:'إيصال التحويل متاح لطرق الدفع الإلكتروني فقط'});
+      receiptName=String(b.receiptName||'');
+      const extension=receiptName.split('.').pop()?.toLowerCase();
+      const mime={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',pdf:'application/pdf'}[extension];
+      const encoded=String(b.receiptBase64||'');
+      if(!mime||receiptName.length>150||encoded.length>4*1024*1024||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))return res.status(400).json({error:'ارفع إيصال JPG أو PNG أو PDF أقل من 3 ميجابايت'});
+      const bytes=Buffer.from(encoded,'base64');
+      const valid=extension==='pdf'?bytes.subarray(0,5).toString()==='%PDF-':extension==='png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):bytes.subarray(0,3).equals(Buffer.from([255,216,255]));
+      if(bytes.length<8||bytes.length>3*1024*1024||!valid)return res.status(400).json({error:'ملف الإيصال غير صالح'});
+      receiptPath=auth.user.id+'/receipts/'+draftId+'-'+crypto.randomUUID()+'.'+extension;
+      const {error:uploadError}=await db.storage.from('website-chat-pdfs').upload(receiptPath,bytes,{contentType:mime,upsert:false});
+      if(uploadError)return res.status(503).json({error:'تعذر رفع الإيصال'});
+    }
+    const patch={payment_method:method,updated_at:new Date().toISOString()};
+    if(receiptPath){patch.payment_receipt_path=receiptPath;patch.payment_receipt_filename=receiptName}
+    const {data:updated,error:updateError}=await db.from('website_chat_drafts').update(patch).eq('id',draftId).eq('customer_id',auth.user.id).eq('status','pending_review').select('id,payment_method,payment_receipt_filename').maybeSingle();
+    if(updateError||!updated){if(receiptPath)await db.storage.from('website-chat-pdfs').remove([receiptPath]);return res.status(409).json({error:'تعذر حفظ بيانات الدفع؛ حاول مرة أخرى'})}
+    if(receiptPath&&draft.payment_receipt_path)await db.storage.from('website-chat-pdfs').remove([draft.payment_receipt_path]);
+    return res.status(200).json({saved:true,paymentMethod:updated.payment_method,receiptName:updated.payment_receipt_filename,paymentConfirmed:false});
+  }
   if(req.method==='GET'){
     const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
     if(adminError||!admin)return res.status(403).json({error:'غير مصرح بعرض المسودات'});
-    const {data:rows,error:rowsError}=await db.from('website_chat_drafts').select('id,customer_id,category_id,subcategory_id,product_id,quantity,job_name,quoted_price,pdf_filename,status,created_at').order('created_at',{ascending:false}).limit(100);
+    const {data:rows,error:rowsError}=await db.from('website_chat_drafts').select('id,customer_id,category_id,subcategory_id,product_id,quantity,job_name,quoted_price,pdf_filename,status,payment_method,payment_receipt_filename,created_at').order('created_at',{ascending:false}).limit(100);
     if(rowsError)return res.status(503).json({error:'تعذر تحميل مسودات الموقع'});
     return res.status(200).json({drafts:rows||[]});
   }
