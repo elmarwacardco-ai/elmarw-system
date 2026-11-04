@@ -59,8 +59,19 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const response=await fetch('/api/website-chat-drafts.js?action=payment',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:lastDraftId,method,receiptName:receipt?.name,receiptBase64})});
       const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'تعذر حفظ اختيار الدفع');
       setPaymentChoice(method);setPaymentFeedback('✅ تم حفظ طريقة الدفع: '+method+(receipt?'\n📎 تم رفع وحفظ صورة التحويل: '+receipt.name:'\nلم يتم إرفاق إيصال')+'\nرقم المسودة: '+lastDraftId+'\n⏳ الإيصال بانتظار مراجعة الموظف، ولم يتم تأكيد سداد أي مبلغ.');
-      setMessages(prev=>[...prev,{from:'bot',text:'تمام يا فندم، حفظنا طريقة الدفع '+method+(receipt?' واستلمنا الإيصال':'')+'. الموظف هيراجع المسودة وبيانات الدفع قبل تأكيد الطلب.'}]);
+      setMessages(prev=>[...prev,{from:'bot',text:['🧾 ملخص طلب حضرتك يا '+(loggedClient?.name||'فندم'),'اسم الشغل: '+draft.jobName,'المنتج: '+(chosenProduct?.name||'المنتج المختار'),'الكمية: '+draft.quantity+' نسخة','السعر: '+(priceTable[draft.quantity]||'—')+' جنيه','ملف التصميم: '+(draft.pdf?.name||'مرفق'),'طريقة الدفع: '+method,'الإيصال: '+(receipt?'مرفق للمراجعة':'غير مرفق'),'رقم المسودة: '+lastDraftId,'✅ تم استلام طلب حضرتك. سوف يراجعه موظف المروة ويتم الرد على طلبكم.','بعد موافقة الموظف سيظهر رقم الأوردر الرسمي في البوت عند متابعة الطلب.'].join('\n')}]);
     }catch(error){setPaymentFeedback('❌ '+error.message)}finally{setPaymentBusy(false)}
+  }
+  const checkWebsiteOrder=async()=>{
+    if(!lastDraftId){setMessages(prev=>[...prev,{from:'bot',text:'ابدأ طلب جديد أو افتح طلباتك علشان تتابع طلب سابق.'}]);return}
+    try{
+      const token=sessionStorage.getItem('elmarw_customer_token');
+      const response=await fetch('/api/website-chat-drafts.js?action=my-status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:lastDraftId})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'تعذر متابعة الطلب');
+      const d=result.draft;
+      setMessages(prev=>[...prev,{from:'bot',text:d.status==='approved'?'🎉 تمت موافقة موظف المروة على طلبك!\nرقم الأوردر الرسمي: '+d.approved_order_id+'\nتقدر تستخدم الكود ده لمتابعة الأوردر.':'⏳ طلبك '+d.job_name+' لسه بانتظار مراجعة موظف المروة. رقم المسودة: '+d.id}]);
+    }catch(e){setMessages(prev=>[...prev,{from:'bot',text:'تعذر متابعة الطلب: '+e.message}])}
   }
   const beginDraft = () => {
     if(!loggedClient){setWelcomeStep('ask');return}
@@ -166,7 +177,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep==='job' && <form onSubmit={e=>{e.preventDefault();if(draft.jobName.trim()){setDraftStep('pdf');setDraftError('');setMessages(prev=>[...prev,{from:'bot',text:'تسلم يا '+(loggedClient?.name||'فندم')+' 🙌 ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة (لحد 3 ميجابايت).'}])}}}><input aria-label="اسم الشغل" placeholder="اسم الشغل (غير اسم العميل)" maxLength={120} value={draft.jobName} onChange={e=>setDraft(v=>({...v,jobName:e.target.value}))} style={{width:'100%',padding:9,boxSizing:'border-box',margin:'8px 0'}}/><button disabled={!draft.jobName.trim()} type="submit">التالي: رفع ملف التصميم</button></form>}
         {draftStep==='pdf' && <div><p>📎 ارفع تصميم الطباعة بصيغة PDF أو صورة JPG/PNG عالية الجودة، بحد أقصى 3 ميجابايت. الأفضل ملف أصلي واضح، والصور الضعيفة ممكن تحتاج مراجعة من الموظف.</p><input aria-label="ملف التصميم" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;setDraftError('');if(!/\.(pdf|jpe?g|png)$/i.test(f.name)){setDraftError('❌ اختار PDF أو صورة JPG/PNG فقط.');e.target.value='';return}if(f.size>3*1024*1024){setDraftError('❌ الملف أكبر من 3 ميجابايت.');e.target.value='';return}if(!f.size){setDraftError('❌ الملف فاضي.');e.target.value='';return}setDraft(v=>({...v,pdf:f}));setDraftStep('preview');setMessages(prev=>[...prev,{from:'bot',text:'وصل الملف '+f.name+' ✅ راجع بيانات الشغل واضغط إرسال المسودة للمراجعة.'}])}}/>{draftError&&<p role="alert" style={{background:'#fee2e2',color:'#991b1b',padding:12,borderRadius:9,fontWeight:700}}>{draftError}</p>}</div>}
         {draftStep==='preview' && <div><p>المنتج: {chosenProduct?.name}<br/>الكمية: {draft.quantity}<br/>اسم الشغل: {draft.jobName}<br/>السعر المعروض: {priceTable[draft.quantity]} ج.م<br/>الملف: {draft.pdf?.name}</p><p style={{color:'#92400e'}}>اضغط إرسال المسودة لرفع التصميم وحفظ الطلب للمراجعة. لن يتم إصدار أوردر رسمي إلا بعد اعتماد الموظف.</p><button type="button" disabled={draftSubmitting} onClick={submitDraft} style={{background:'#16a34a',color:'white',padding:'10px 15px',border:0,borderRadius:9,cursor:'pointer'}}>{draftSubmitting?'جاري إرسال المسودة...':'إرسال المسودة للمراجعة'}</button>{draftError&&<p role="alert" style={{color:'#b91c1c'}}>{draftError}</p>}</div>}
-        {draftStep==='payment' && <div><p>💳 مسودة رقم {lastDraftId}. اختار طريقة الدفع اللي تناسبك:</p>{['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].map(method=>draftButton(method,()=>{setPaymentChoice(method);setPaymentReceipt(null);setPaymentFeedback('');if(method==='نقدي')saveDraftPayment(method)}))}{paymentChoice&&['فودافون كاش','انستا باي','تحويل بنكي'].includes(paymentChoice)&&<div style={{background:'#eff6ff',padding:12,borderRadius:10}}><p>اخترت {paymentChoice}. تقدر تسجل الطريقة دلوقتي أو ترفق إيصال التحويل (اختياري).</p><input aria-label="إيصال التحويل" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;if(!/\.(pdf|jpe?g|png)$/i.test(f.name)||!f.size||f.size>3*1024*1024){setPaymentFeedback('❌ اختار إيصال PDF أو JPG/PNG أقل من 3 ميجابايت');e.target.value='';return}setPaymentReceipt(f);setPaymentFeedback('📎 تم اختيار الإيصال: '+f.name+' — اضغط «حفظ طريقة الدفع والإيصال» لرفعه فعليًا.')}}/>{draftButton(paymentBusy?'جاري الحفظ...':'💾 حفظ طريقة الدفع'+(paymentReceipt?' والإيصال':''),()=>{if(!paymentBusy)saveDraftPayment(paymentChoice,paymentReceipt)})}</div>}{paymentFeedback&&<p role="status" style={{padding:10,borderRadius:8,background:paymentFeedback.startsWith('❌')?'#fee2e2':paymentFeedback.startsWith('📎')?'#eff6ff':'#ecfdf5',whiteSpace:'pre-wrap'}}>{paymentFeedback}</p>}<p style={{color:'#92400e'}}>اختيار الطريقة أو رفع إيصال لا يثبت استلام المبلغ. الموظف وحده يؤكد التحصيل.</p>{draftButton('🧾 طلب جديد',beginDraft)}{draftButton('↩ الرجوع للقائمة',()=>setDraftStep(''))}</div>}
+        {draftStep==='payment' && <div><p>💳 مسودة رقم {lastDraftId}. اختار طريقة الدفع اللي تناسبك:</p>{['نقدي','فودافون كاش','انستا باي','تحويل بنكي'].map(method=>draftButton(method,()=>{setPaymentChoice(method);setPaymentReceipt(null);setPaymentFeedback('');if(method==='نقدي')saveDraftPayment(method)}))}{paymentChoice&&['فودافون كاش','انستا باي','تحويل بنكي'].includes(paymentChoice)&&<div style={{background:'#eff6ff',padding:12,borderRadius:10}}><p>اخترت {paymentChoice}. تقدر تسجل الطريقة دلوقتي أو ترفق إيصال التحويل (اختياري).</p><input aria-label="إيصال التحويل" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(!f)return;if(!/\.(pdf|jpe?g|png)$/i.test(f.name)||!f.size||f.size>3*1024*1024){setPaymentFeedback('❌ اختار إيصال PDF أو JPG/PNG أقل من 3 ميجابايت');e.target.value='';return}setPaymentReceipt(f);setPaymentFeedback('📎 تم اختيار الإيصال: '+f.name+' — اضغط «حفظ طريقة الدفع والإيصال» لرفعه فعليًا.')}}/>{draftButton(paymentBusy?'جاري الحفظ...':'💾 حفظ طريقة الدفع'+(paymentReceipt?' والإيصال':''),()=>{if(!paymentBusy)saveDraftPayment(paymentChoice,paymentReceipt)})}</div>}{paymentFeedback&&<p role="status" style={{padding:10,borderRadius:8,background:paymentFeedback.startsWith('❌')?'#fee2e2':paymentFeedback.startsWith('📎')?'#eff6ff':'#ecfdf5',whiteSpace:'pre-wrap'}}>{paymentFeedback}</p>}<p style={{color:'#92400e'}}>اختيار الطريقة أو رفع إيصال لا يثبت استلام المبلغ. الموظف وحده يؤكد التحصيل.</p>{draftButton('🔎 متابعة موافقة الموظف',checkWebsiteOrder)}{draftButton('🧾 طلب جديد',beginDraft)}{draftButton('↩ الرجوع للقائمة',()=>setDraftStep(''))}</div>}
         {draftStep!=='payment'&&draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       </div>
@@ -223,6 +234,21 @@ export default function App() {
       if(!response.ok)throw new Error(result.error||'تعذر تحميل طلبات بوت الموقع')
       setWebsiteDrafts(result.drafts||[])
     }catch(e){setWebsiteDraftError(e.message)}finally{setWebsiteDraftLoading(false)}
+  }
+  const approveWebsiteDraft=async(id)=>{
+    const deliveryDate=window.prompt('اكتب تاريخ التسليم بصيغة YYYY-MM-DD');
+    if(!deliveryDate)return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)){setWebsiteDraftError('اكتب التاريخ بصيغة YYYY-MM-DD');return}
+    if(!window.confirm('تأكيد اعتماد المسودة وإصدار أوردر رسمي؟'))return;
+    setWebsiteDraftError('');
+    try{
+      const token=sessionStorage.getItem(TOKEN_KEY)||'';
+      const response=await fetch('/api/website-chat-drafts.js?action=approve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:id,deliveryDate})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'تعذر اعتماد المسودة');
+      window.alert('تم اعتماد الطلب. كود الأوردر: '+result.serial);
+      await loadWebsiteDrafts();
+    }catch(e){setWebsiteDraftError(e.message)}
   }
   const openWebsiteDraftFile=async(id,kind)=>{
     setWebsiteDraftError('')
@@ -812,7 +838,7 @@ export default function App() {
     <div>طريقة الدفع: {d.payment_method||'لم يحدد العميل بعد'} — <strong>غير مؤكدة</strong></div>
     <div>تاريخ الإرسال: {new Date(d.created_at).toLocaleString('ar-EG')}</div>
     <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
-      <button style={btnStyle} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>📎 فتح التصميم: {d.pdf_filename}</button>
+      {d.status==='pending_review'&&<button style={{...btnStyle,background:'#16a34a',color:'white'}} onClick={()=>approveWebsiteDraft(d.id)}>✅ اعتماد الأوردر وتحديد موعد التسليم</button>}<button style={btnStyle} onClick={()=>openWebsiteDraftFile(d.id,'artwork')}>📎 فتح التصميم: {d.pdf_filename}</button>
       {d.payment_receipt_filename&&<button style={btnStyle} onClick={()=>openWebsiteDraftFile(d.id,'receipt')}>🧾 فتح الإيصال: {d.payment_receipt_filename}</button>}
     </div>
   </article>)}</div>
