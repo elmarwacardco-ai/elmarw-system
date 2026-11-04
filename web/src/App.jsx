@@ -126,6 +126,41 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     if (!q) return
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
+    const normalizeName=v=>String(v||'').toLocaleLowerCase('ar').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').trim();
+    const answerChoice=(items,label)=>{
+      const found=items.find(x=>normalizeName(x.name)===normalizeName(q))||items.find(x=>normalizeName(x.name).includes(normalizeName(q))&&q.length>=2);
+      if(!found){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'مش لاقي '+label+' بالاسم ده. المتاح: '+items.map(x=>x.name).join('، ')+'. اكتب الاسم زي ما هو.'}]);setQuestion('');return null}
+      return found;
+    };
+    if(draftStep==='category'||chatMode==='priceCategories'){
+      const c=answerChoice(categories,'القسم');if(!c)return;
+      const subs=subCategories.filter(x=>String(x.categoryId)===String(c.id));
+      setDraft(v=>({...v,categoryId:String(c.id),subCategoryId:'',productId:''}));
+      if(draftStep==='category')setDraftStep(subs.length?'subcategory':'product');else setChatMode(subs.length?'priceSubcategories':'priceProducts');
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:subs.length?'تمام. اختار القسم الفرعي: '+subs.map(x=>x.name).join('، '):'تمام. اكتب اسم المنتج اللي محتاجه.'}]);setQuestion('');return;
+    }
+    if(draftStep==='subcategory'||chatMode==='priceSubcategories'){
+      const c=answerChoice(subCategories.filter(x=>String(x.categoryId)===draft.categoryId),'القسم الفرعي');if(!c)return;
+      setDraft(v=>({...v,subCategoryId:String(c.id),productId:''}));
+      if(draftStep==='subcategory')setDraftStep('product');else setChatMode('priceProducts');
+      const ps=products.filter(p=>String(p.subCategoryId)===String(c.id));
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:ps.length?'اختار المنتج: '+ps.map(p=>p.name).join('، '):'القسم ده مفيهوش منتجات متاحة حاليًا. اكتب «رجوع» علشان تختار قسم تاني.'}]);setQuestion('');return;
+    }
+    if(draftStep==='product'||chatMode==='priceProducts'){
+      const ps=products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId);
+      const p=answerChoice(ps,'المنتج');if(!p)return;
+      setDraft(v=>({...v,productId:String(p.id)}));
+      const table=(()=>{try{let x=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof x==='string'?JSON.parse(x):x||{}}catch{return {}}})();
+      const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
+      if(draftStep==='product')setDraftStep('quantity');else setChatMode('priceDetails');
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختر الكمية واكتب رقمها: '+qty.map(n=>n+' نسخة = '+table[n]+' جنيه').join('، '):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
+    }
+    if(draftStep==='quantity'||chatMode==='priceDetails'){
+      const quantity=Number(q.replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[۰-۹]/g,c=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,''));
+      if(!availableQuantities.includes(quantity)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'الكمية دي مش متاحة. اكتب واحدة من الكميات: '+availableQuantities.join('، ')}]);setQuestion('');return}
+      setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');confirmQuantity(quantity);return;
+    }
+    if(/^(رجوع|القائمة|الغاء|إلغاء)$/i.test(q)){setDraftStep('');setChatMode('menu');setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، تحب تعرف سعر منتج، تعمل طلب جديد، ولا تتابع طلب؟'}]);setQuestion('');return}
     if(draftStep==='job'){
       setQuestion('');
       if(q.length<2){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'اكتب اسم الشغل كامل علشان نكمل.'}]);return}
@@ -141,7 +176,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تحب نكمل الطلب بالمنتج والكمية دول؟ اختار أيوه أو تغيير الكمية.'}]);return
     }
     if(/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');showPriceCategories();return}
-    if(/طلب جديد|اطبع|عايز اطلب|اعمل طلب|عاوز اطلب|اطبعلي/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');beginDraft();return}
+    if(/طلب جديد|اطبع|عايز اطلب|اعمل طلب|عاوز اطلب|اطبعلي|اوردر جديد|أوردر جديد|طلب طباعة/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');beginDraft();return}
     if(/طلب|اوردر|أوردر/.test(normalized)&&/حالة|متابع|فين|وصل|قديم|طلباتي/.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'حاضر يا '+(loggedClient.name||'فندم')+' 📦 اضغط «عرض طلباتي» علشان تشوف الطلبات المرتبطة بحسابك وحالة كل واحد. بيانات العملاء التانيين مش هتظهر.'}]);setQuestion('');setChatMode('menu');return}
     let answer = 'ممكن تسألني عن الأسعار أو المنتجات أو طريقة الطلب أو متابعة طلبك. ولو محتاج مساعدة خاصة، تواصل مع خدمة العملاء.'
     if (/سعر|اسعار|أسعار|الاسعار|الأسعار|تكلف|بكام|ثمن|price/.test(normalized)) {
@@ -215,12 +250,11 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
           </div>
         </div>}
       {loggedClient && !draftStep && <div style={{padding:'8px 12px',fontSize:13}}>
-        {chatMode==='menu' && <><strong>أهلاً {loggedClient.name||'بيك'} 👋 تحب أساعدك في إيه؟</strong>{draftButton('💰 معرفة أسعار المنتجات',showPriceCategories)}{draftButton('🧾 طلب طباعة جديد',beginDraft)}{draftButton('📦 متابعة طلباتي',()=>{onMyOrders();setOpen(false)})}</>}
-        {chatMode==='priceCategories' && <><strong>اختار القسم</strong>{categories.map(c=>draftButton(c.name,()=>showPriceSubcategories(c.id)))}</>}
-        {chatMode==='priceSubcategories' && <><strong>اختار القسم الفرعي</strong>{subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>draftButton(c.name,()=>showPriceProducts(c.id)))}</>}
-        {chatMode==='priceProducts' && <><strong>اختار المنتج</strong>{products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId).length?products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId).map(p=>draftButton(p.name,()=>showPriceProduct(p.id))):<p style={{color:'#92400e'}}>مفيش منتجات متاحة في القسم ده حاليًا. اختار قسم تاني أو اطلب المساعدة من خدمة العملاء.</p>}{draftButton('↩ تغيير القسم',showPriceCategories)}</>}
-        {chatMode==='priceDetails' && <><strong>{chosenProduct?.name} — أسعار فئة {loggedClient.type==='VIP'?'VIP':'B'}</strong>{availableQuantities.length?availableQuantities.map(q=>draftButton(q+' نسخة — '+priceTable[q]+' ج.م',()=>{confirmQuantity(q)})): <p>لا توجد أسعار منشورة لهذا المنتج.</p>}</>}
-        {chatMode!=='menu'&&draftButton('↩ رجوع للقائمة الرئيسية',showChatMenu)}
+        {chatMode==='menu' && <p>اكتب طلبك في الرسالة تحت، زي «عايز أعرف سعر لامع» أو «عايز أعمل أوردر» أو «متابعة طلبي».</p>}
+        {chatMode==='priceCategories' && <p>اكتب اسم القسم: {categories.map(c=>c.name).join('، ')}</p>}
+        {chatMode==='priceSubcategories' && <p>اكتب اسم القسم الفرعي: {subCategories.filter(c=>String(c.categoryId)===draft.categoryId).map(c=>c.name).join('، ')}</p>}
+        {chatMode==='priceProducts' && <p>اكتب اسم المنتج: {products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId).map(p=>p.name).join('، ')||'مفيش منتجات متاحة في القسم ده. اكتب رجوع.'}</p>}
+        {chatMode==='priceDetails' && <p>اكتب الكمية اللي محتاجها: {availableQuantities.map(q=>q+' نسخة = '+priceTable[q]+' جنيه').join('، ')||'مفيش أسعار متاحة'}</p>}
       </div>}
       {draftStep && <div style={{padding:'10px 12px',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
@@ -246,13 +280,8 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         {draftStep!=='payment'&&draftButton('إلغاء المسودة',()=>setDraftStep(''))}
       </div>}
       </div>
-      <div className="marwa-chat-actions" style={{display:'flex',gap:5,flexWrap:'wrap',padding:'8px 10px'}}>
-        {!draftStep&&chatMode==='menu'&&draftButton('➕ ابدأ طلب طباعة',beginDraft)}
-        {!draftStep&&chatMode==='menu'&&['الأسعار','طريقة الطلب','متابعة طلبي'].map(q=><button key={q} type="button" onClick={()=>reply(q)} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>{q}</button>)}
-        {!draftStep&&chatMode==='menu'&&loggedClient && <button type="button" onClick={()=>{onMyOrders();setOpen(false)}} style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:15,padding:'6px 9px',cursor:'pointer',fontSize:12}}>عرض طلباتي</button>}
-      </div>
       <form className="marwa-chat-form" onSubmit={e=>{e.preventDefault();reply(question)}} style={{display:'flex',gap:6,padding:10,borderTop:'1px solid #e2e8f0'}}>
-        <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder={draftStep==='job'?'اكتب اسم الشغل هنا...':draftStep?'اكتب استفسارك أو استخدم أزرار الخطوة...':'اسأل عن المنتجات أو الطلبات...'} maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
+        <input aria-label="اكتب سؤالك" value={question} onChange={e=>setQuestion(e.target.value)} placeholder={draftStep==='job'?'اكتب اسم الشغل...':draftStep==='category'||chatMode==='priceCategories'?'اكتب اسم القسم...':draftStep==='product'||chatMode==='priceProducts'?'اكتب اسم المنتج...':draftStep==='quantity'||chatMode==='priceDetails'?'اكتب الكمية...':'اكتب ردك للبوت هنا...'} maxLength={300} style={{flex:1,minWidth:0,border:'1px solid #cbd5e1',borderRadius:9,padding:9}} />
         <button type="submit" disabled={!question.trim()} style={{background:'#1e3a8a',color:'white',border:0,borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>إرسال</button>
       </form>
     </section>}
