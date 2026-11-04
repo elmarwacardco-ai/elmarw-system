@@ -3,13 +3,20 @@ import { createClient } from '@supabase/supabase-js';
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');
   res.setHeader('Vary','Authorization');
-  if(req.method!=='POST') return res.status(405).json({error:'Method not allowed'});
+  if(!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method not allowed'});
   if(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_KEY) return res.status(503).json({error:'Database unavailable'});
   const token=String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
   if(!token)return res.status(401).json({error:'سجل دخولك أولاً'});
   const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
   const {data:auth,error:authError}=await db.auth.getUser(token);
   if(authError||!auth?.user)return res.status(401).json({error:'جلسة الدخول غير صالحة'});
+  if(req.method==='GET'){
+    const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+    if(adminError||!admin)return res.status(403).json({error:'غير مصرح بعرض المسودات'});
+    const {data:rows,error:rowsError}=await db.from('website_chat_drafts').select('id,customer_id,category_id,subcategory_id,product_id,quantity,job_name,quoted_price,pdf_filename,status,created_at').order('created_at',{ascending:false}).limit(100);
+    if(rowsError)return res.status(503).json({error:'تعذر تحميل مسودات الموقع'});
+    return res.status(200).json({drafts:rows||[]});
+  }
   const {data:profile,error:profileError}=await db.from('customer_profiles').select('id,type').eq('id',auth.user.id).maybeSingle();
   if(profileError||!profile)return res.status(403).json({error:'حساب العميل غير موجود'});
   const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
