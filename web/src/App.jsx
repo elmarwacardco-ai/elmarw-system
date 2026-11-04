@@ -190,7 +190,11 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية واكتب عدد النسخ:\n'+qty.map((n,i)=>(i+1)+'. '+n+' نسخة').join('\n'):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
     }
     if(draftStep==='quantity'||chatMode==='priceDetails'){
-      const quantity=Number(q.replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[۰-۹]/g,c=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,''));
+      const digitText=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+      const wordIndex={'واحد':1,'اثنين':2,'اتنين':2,'ثلاثة':3,'تلاتة':3,'اربعة':4,'أربعة':4,'خمسة':5,'ستة':6,'سبعة':7,'ثمانية':8,'تمانية':8,'تسعة':9,'عشرة':10};
+      const cleaned=digitText.trim().toLocaleLowerCase('ar');
+      const numeric=Number(cleaned.replace(/[^0-9]/g,''));
+      const quantity=availableQuantities.includes(numeric)?numeric:(numeric>=1&&numeric<=availableQuantities.length?availableQuantities[numeric-1]:(wordIndex[cleaned]&&wordIndex[cleaned]<=availableQuantities.length?availableQuantities[wordIndex[cleaned]-1]:(/^(الف|ألف)( نسخة| نسخ)?$/.test(cleaned)?1000:0)));
       if(!availableQuantities.includes(quantity)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'الكمية دي مش متاحة. اكتب واحدة من الكميات: '+availableQuantities.join('، ')}]);setQuestion('');return}
       setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');confirmQuantity(quantity);return;
     }
