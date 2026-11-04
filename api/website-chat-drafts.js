@@ -40,6 +40,19 @@ export default async function handler(req,res) {
     if(receiptPath&&draft.payment_receipt_path)await db.storage.from('website-chat-pdfs').remove([draft.payment_receipt_path]);
     return res.status(200).json({saved:true,paymentMethod:updated.payment_method,receiptName:updated.payment_receipt_filename,paymentConfirmed:false});
   }
+  if(req.method==='POST' && String(req.query?.action||'')==='review-file'){
+    const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
+    if(adminError||!admin)return res.status(403).json({error:'غير مصرح بعرض ملفات الطلبات'});
+    const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+    const draftId=String(b.draftId||'');
+    const field=b.kind==='receipt'?'payment_receipt_path':'pdf_path';
+    if(!/^[0-9a-f-]{36}$/i.test(draftId))return res.status(400).json({error:'رقم المسودة غير صحيح'});
+    const {data:draft,error:readError}=await db.from('website_chat_drafts').select('pdf_path,payment_receipt_path').eq('id',draftId).maybeSingle();
+    if(readError||!draft||!draft[field])return res.status(404).json({error:'الملف غير موجود'});
+    const {data:signed,error:signError}=await db.storage.from('website-chat-pdfs').createSignedUrl(draft[field],120);
+    if(signError||!signed?.signedUrl)return res.status(503).json({error:'تعذر فتح الملف'});
+    return res.status(200).json({url:signed.signedUrl});
+  }
   if(req.method==='GET'){
     const {data:admin,error:adminError}=await db.from('admin_users').select('user_id').eq('user_id',auth.user.id).maybeSingle();
     if(adminError||!admin)return res.status(403).json({error:'غير مصرح بعرض المسودات'});
