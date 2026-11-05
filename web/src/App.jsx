@@ -20,6 +20,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [draftStep, setDraftStep] = useState('')
   const [welcomeStep,setWelcomeStep]=useState('ask')
   const [chatMode,setChatMode]=useState('menu')
+  const [customerChatOrders,setCustomerChatOrders]=useState([])
   const [draftSubmitting,setDraftSubmitting] = useState(false)
   const [lastDraftId,setLastDraftId] = useState('')
   const [approvalNotified,setApprovalNotified] = useState('')
@@ -65,15 +66,18 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     }catch(error){setPaymentFeedback('❌ '+error.message)}finally{setPaymentBusy(false)}
   }
   const checkWebsiteOrder=async()=>{
-    if(!lastDraftId){setMessages(prev=>[...prev,{from:'bot',text:'ابدأ طلب جديد أو افتح طلباتك علشان تتابع طلب سابق.'}]);return}
+    setDraftStep('');
     try{
       const token=sessionStorage.getItem('elmarw_customer_token');
-      const response=await fetch('/api/website-chat-drafts.js?action=my-status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({draftId:lastDraftId})});
+      const response=await fetch('/api/website-chat-drafts.js?action=my-orders',{method:'POST',headers:{Authorization:'Bearer '+token}});
       const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(result.error||'تعذر متابعة الطلب');
-      const d=result.draft;
-      setMessages(prev=>[...prev,{from:'bot',text:d.status==='approved'?'🎉 تمت موافقة موظف المروة على طلبك!\nرقم الأوردر الرسمي: '+d.approved_order_id+'\nتقدر تستخدم الكود ده لمتابعة الأوردر.':'⏳ طلبك '+d.job_name+' لسه بانتظار مراجعة موظف المروة. رقم المسودة: '+d.id}]);
-    }catch(e){setMessages(prev=>[...prev,{from:'bot',text:'تعذر متابعة الطلب: '+e.message}])}
+      if(!response.ok)throw new Error(result.error||'تعذر عرض الطلبات');
+      const orders=result.orders||[];
+      setCustomerChatOrders(orders);
+      setChatMode('chooseOrder');
+      const choices=orders.map((o,i)=>(i+1)+'. '+o.job_name).join('\n');
+      setMessages(prev=>[...prev,{from:'bot',text:orders.length?'حاضر يا فندم 😊 دي أسماء الأشغال المسجلة عندنا على حسابك:\n'+choices+'\n\nتحب تطمّن على أنهي شغل؟ اكتب اسمه أو رقمه.':'أهلاً بيك، لسه مفيش أشغال مسجلة على حسابك. تحب نبدأ طلب جديد؟'}]);
+    }catch(e){setMessages(prev=>[...prev,{from:'bot',text:'معلش، مش قادر أجيب طلباتك دلوقتي. '+e.message}])}
   }
   useEffect(()=>{
     if(!open||!lastDraftId||approvalNotified===lastDraftId)return;
@@ -138,6 +142,19 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
     const normalizeName=v=>String(v||'').toLocaleLowerCase('ar').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').trim();
+    if(chatMode==='chooseOrder'&&!draftStep){
+      const digits=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
+      const index=/^\d+$/.test(digits)?Number(digits)-1:-1;
+      const matches=customerChatOrders.filter(o=>normalizeName(o.job_name)===normalizeName(q));
+      const selected=customerChatOrders[index]||matches[0];
+      if(!selected){
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'ممكن تكتب اسم الشغل زي ما هو في القائمة، أو رقمه؟ وأنا أقولك وصل لفين 😊'}]);setQuestion('');return;
+      }
+      const approved=selected.status==='approved'&&selected.approved_order_id;
+      const response=approved?'تمام يا فندم، شغل «'+selected.job_name+'» اتعتمد ✅\nرقم الأوردر: '+selected.approved_order_id+'.':'حاضر يا فندم، شغل «'+selected.job_name+'» لسه جاري مراجعته ⏳\nأول ما يتأكد هيوصلك إشعار.';
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:response+'\n\nتحب تسأل عن شغل تاني؟ اكتب اسمه أو رقمه.'}]);setQuestion('');return;
+    }
+
     if(draftStep==='specifications'||(!draftStep&&chatMode==='priceSpecifications')){
       const yes=/^(تمام|موافق|اكمل|كمل|نعم|ايوه|أيوه|اه|آه|ok|yes)$/i.test(q);
       if(yes){
