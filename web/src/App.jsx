@@ -152,7 +152,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const showPriceProducts = id => {setDraft(v=>({...v,subCategoryId:String(id),productId:''}));setChatMode('priceProducts')}
   const showPriceProduct = id => {setDraft(v=>({...v,productId:String(id)}));setChatMode('priceDetails')}
   const chatOptions=(items)=>items.length?items.map((x,i)=>(i+1)+'. '+x.name).join('\n'):'مفيش اختيارات متاحة حاليًا.';
-  const chatProducts=(categoryId,subId)=>products.filter(p=>subId?String(p.subCategoryId)===String(subId):String(p.categoryId)===String(categoryId));
+  const chatProducts=(categoryId,subId)=>products.filter(p=>subId?String(p.subCategoryId??p.subcategoryId??p.sub_category_id)===String(subId):String(p.categoryId??p.category_id)===String(categoryId)||subCategories.some(sc=>String(sc.categoryId)===String(categoryId)&&String(sc.id)===String(p.subCategoryId??p.subcategoryId??p.sub_category_id)));
   const reply = (raw) => {
     const q = raw.trim()
     if (!q) return
@@ -236,7 +236,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:(subs.length?'اختار القسم الفرعي:\\n'+chatOptions(subs):'اختار المنتج:\\n'+chatOptions(ps))}]);setQuestion('');return;
       }
       if(subcategory && String(subcategory.categoryId)!==String(draft.categoryId) || subcategory && (draftStep==='subcategory'||chatMode==='priceSubcategories') && String(subcategory.categoryId)===String(draft.categoryId)){
-        const ps=products.filter(p=>String(p.subCategoryId)===String(subcategory.id));
+        const ps=chatProducts(subcategory.categoryId,subcategory.id);
         setDraft(v=>({...v,categoryId:String(subcategory.categoryId),subCategoryId:String(subcategory.id),productId:'',quantity:''}));
         if(inDraft)setDraftStep('product');else setChatMode('priceProducts');
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:ps.length?'اختار المنتج:\\n'+chatOptions(ps):'مفيش منتجات في القسم ده حاليًا. اكتب اسم قسم تاني.'}]);setQuestion('');return;
@@ -264,11 +264,11 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const c=answerChoice(subCategories.filter(x=>String(x.categoryId)===draft.categoryId),'القسم الفرعي');if(!c)return;
       setDraft(v=>({...v,subCategoryId:String(c.id),productId:''}));
       if(draftStep==='subcategory')setDraftStep('product');else setChatMode('priceProducts');
-      const ps=products.filter(p=>String(p.subCategoryId)===String(c.id));
+      const ps=chatProducts(draft.categoryId,c.id);
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:ps.length?'اختار المنتج بالاسم أو الرقم:\n'+chatOptions(ps):'القسم ده مفيهوش منتجات متاحة حاليًا. اكتب «رجوع» علشان تختار قسم تاني.'}]);setQuestion('');return;
     }
     if(draftStep==='product'||chatMode==='priceProducts'){
-      const ps=products.filter(p=>draft.subCategoryId?String(p.subCategoryId)===draft.subCategoryId:String(p.categoryId)===draft.categoryId);
+      const ps=chatProducts(draft.categoryId,draft.subCategoryId);
       const p=answerChoice(ps,'المنتج');if(!p)return;
       setDraft(v=>({...v,productId:String(p.id)}));
       const table=(()=>{try{let x=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof x==='string'?JSON.parse(x):x||{}}catch{return {}}})();
