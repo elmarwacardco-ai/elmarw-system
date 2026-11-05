@@ -73,6 +73,13 @@ export default async function handler(req,res) {
     if(error)return res.status(409).json({error:error.message});
     return res.status(200).json({approved:true,...data});
   }
+  if(req.method==='POST' && String(req.query?.action||'')==='my-orders'){
+    const {data:rows,error}=await db.from('website_chat_drafts')
+      .select('id,status,approved_order_id,job_name,quantity,created_at')
+      .eq('customer_id',auth.user.id).order('created_at',{ascending:false}).limit(30);
+    if(error)return res.status(503).json({error:'تعذر تحميل طلباتك حاليًا'});
+    return res.status(200).json({orders:rows||[]});
+  }
   if(req.method==='POST' && String(req.query?.action||'')==='my-status'){
     const b=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
     const draftId=String(b.draftId||'');
