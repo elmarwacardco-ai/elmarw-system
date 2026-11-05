@@ -286,6 +286,12 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setMessages(prev=>[...prev,{from:'user',text:q}]);setQuestion('');confirmQuantity(quantity);return;
     }
     if(/^(رجوع|القائمة|الغاء|إلغاء)$/i.test(q)){setDraftStep('');setChatMode('menu');setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، تحب تعرف سعر منتج، تعمل طلب جديد، ولا تتابع طلب؟'}]);setQuestion('');return}
+    if(draftStep==='pdf'){
+      setQuestion('')
+      const asking=/كمل|اكمل|ارفع|رفع|ملف|تصميم|pdf|فين|ازاي|ازاى|عاوز|عايز|تمام|موافق/i.test(q)
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:asking?'تمام يا فندم 😊 اسم الشغل «'+(draft.jobName||'الشغل')+'» متسجل عندنا. ارفع ملف التصميم من زر اختيار الملف اللي ظاهر تحت، وبعدها نراجع الأوردر سوا.':'إحنا دلوقتي في خطوة ملف التصميم 😊 ارفعه من زر اختيار الملف تحت، ولو محتاج تغير حاجة في الطلب قولّي.'}])
+      return
+    }
     if(draftStep==='job'){
       setQuestion('');
       if(q.length<2){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'اكتب اسم الشغل كامل علشان نكمل.'}]);return}
