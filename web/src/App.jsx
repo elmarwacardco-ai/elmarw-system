@@ -103,7 +103,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     setMessages(prev=>[...prev,{from:'bot',text:'تمام يا '+(loggedClient.name||'فندم')+' 😊 هنجهز طلبك سوا. دي أقسام المروة المتاحة، اختار بالاسم أو الرقم:\n'+chatOptions(categories)}])
   }
   const productSpecifications=p=>String(p?.specifications||'').trim();
-  const describeProduct=(p,qty)=>'📋 مواصفات '+p.name+':\\n'+productSpecifications(p)+'\\n\\n'+(qty?'الكمية المطلوبة: '+qty+' نسخة. ':'')+'لو المواصفات مناسبة اكتب «تمام» علشان نكمل للكمية.';
+  const describeProduct=(p,qty)=>'📋 مواصفات '+p.name+':\n'+(productSpecifications(p)||'لم تُضاف مواصفات لهذا المنتج بعد.')+'\n\n'+(qty?'الكمية المطلوبة: '+qty+' نسخة.\n':'')+'لو المواصفات مناسبة اكتب «تمام» علشان نكمل للكمية.';
   const showProductSpecs=(p,inDraft,qty='')=>{
     setDraft(v=>({...v,categoryId:String(p.categoryId||''),subCategoryId:String(p.subCategoryId||''),productId:String(p.id),quantity:''}));
     if(inDraft)setDraftStep('specifications');else setChatMode('priceSpecifications');
