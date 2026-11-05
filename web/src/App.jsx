@@ -112,6 +112,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const confirmQuantity = (quantity) => {
     setDraft(v=>({...v,quantity:String(quantity)}))
     setDraftStep('confirm')
+    setChatMode('menu')
     setMessages(prev=>[...prev,{from:'bot',text:'حضرتك اخترت '+(chosenProduct?.name||'المنتج')+' بكمية '+quantity+' نسخة، والسعر '+priceTable[quantity]+' جنيه لفئة حسابك. تحب نكمل الأوردر؟'}])
   }
   const chooseDraft = (field,value,next) => {
@@ -137,7 +138,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     const normalized = q.toLocaleLowerCase('ar')
     if(!loggedClient){setWelcomeStep('ask');setMessages(prev=>[...prev.slice(-17),{from:'user',text:q},{from:'bot',text:'أهلاً بيك! اختار أول مرة أو عميل سابق علشان نكمل معاك.'}]);setQuestion('');return}
     const normalizeName=v=>String(v||'').toLocaleLowerCase('ar').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').trim();
-    if(draftStep==='specifications'||chatMode==='priceSpecifications'){
+    if(draftStep==='specifications'||(!draftStep&&chatMode==='priceSpecifications')){
       const yes=/^(تمام|موافق|اكمل|كمل|نعم|ايوه|أيوه|اه|آه|ok|yes)$/i.test(q);
       if(yes){
         const qty=availableQuantities;
@@ -237,7 +238,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       if(draftStep==='product')setDraftStep('specifications');else setChatMode('priceSpecifications');
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(p)}]);setQuestion('');return;
     }
-    if(draftStep==='quantity'||chatMode==='priceDetails'){
+    if(draftStep==='quantity'||(!draftStep&&chatMode==='priceDetails')){
       const digitText=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
       const wordIndex={'واحد':1,'اثنين':2,'اتنين':2,'ثلاثة':3,'تلاتة':3,'اربعة':4,'أربعة':4,'خمسة':5,'ستة':6,'سبعة':7,'ثمانية':8,'تمانية':8,'تسعة':9,'عشرة':10};
       const cleaned=digitText.trim().toLocaleLowerCase('ar');
