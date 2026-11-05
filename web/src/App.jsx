@@ -155,7 +155,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'ممكن تكتب اسم الشغل زي ما هو في القائمة، أو رقمه؟ وأنا أقولك وصل لفين 😊'}]);setQuestion('');return;
       }
       const approved=selected.status==='approved'&&selected.approved_order_id;
-      const response=approved?'تمام يا فندم، شغل «'+selected.job_name+'» اتعتمد ✅\nرقم الأوردر: '+selected.approved_order_id+'.':'حاضر يا فندم، شغل «'+selected.job_name+'» لسه جاري مراجعته ⏳\nأول ما يتأكد هيوصلك إشعار.';
+      const response=approved?'تمام يا فندم، شغل «'+selected.job_name+'» اتعتمد ✅\nرقم الأوردر: '+selected.approved_order_id+'. تقدر تتابع مرحلة التنفيذ من صفحة طلباتي.':selected.status==='returned'?'شغل «'+selected.job_name+'» محتاج مراجعة من خدمة العملاء قبل الاعتماد.':'حاضر يا فندم، شغل «'+selected.job_name+'» لسه جاري مراجعته ⏳\nأول ما يتأكد هيوصلك إشعار.';
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:response+'\n\nتحب تسأل عن شغل تاني؟ اكتب اسمه أو رقمه.'}]);setQuestion('');return;
     }
 
