@@ -75,7 +75,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const orders=result.orders||[];
       setCustomerChatOrders(orders);
       setChatMode('chooseOrder');
-      const choices=orders.map((o,i)=>(i+1)+'. '+o.job_name).join('\n');
+      const choices=orders.map((o,i)=>(i+1)+'. '+o.job_name+' — '+new Date(o.created_at).toLocaleDateString('ar-EG',{year:'numeric',month:'numeric',day:'numeric'})).join('\n');
       setMessages(prev=>[...prev,{from:'bot',text:orders.length?'حاضر يا فندم 😊 دي أسماء الأشغال المسجلة عندنا على حسابك:\n'+choices+'\n\nتحب تطمّن على أنهي شغل؟ اكتب اسمه أو رقمه.':'أهلاً بيك، لسه مفيش أشغال مسجلة على حسابك. تحب نبدأ طلب جديد؟'}]);
     }catch(e){setMessages(prev=>[...prev,{from:'bot',text:'معلش، مش قادر أجيب طلباتك دلوقتي. '+e.message}])}
   }
@@ -146,6 +146,10 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       const digits=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
       const index=/^\d+$/.test(digits)?Number(digits)-1:-1;
       const matches=customerChatOrders.filter(o=>normalizeName(o.job_name)===normalizeName(q));
+      if(index<0&&matches.length>1){
+        const options=matches.map(o=>{const i=customerChatOrders.indexOf(o)+1;return i+'. '+o.job_name+' — '+new Date(o.created_at).toLocaleDateString('ar-EG',{year:'numeric',month:'numeric',day:'numeric'})}).join('\n');
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'عندك أكتر من طلب باسم الشغل ده 😊\n'+options+'\nاكتب رقم الطلب اللي تحب تعرف حالته.'}]);setQuestion('');return;
+      }
       const selected=customerChatOrders[index]||matches[0];
       if(!selected){
         setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'ممكن تكتب اسم الشغل زي ما هو في القائمة، أو رقمه؟ وأنا أقولك وصل لفين 😊'}]);setQuestion('');return;
