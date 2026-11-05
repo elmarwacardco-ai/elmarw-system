@@ -122,7 +122,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const chooseDraft = (field,value,next) => {
     setDraft(prev=>({...prev,[field]:value}))
     setDraftStep(next)
-    const prompts={subcategory:'حلو 👌 اختار القسم الفرعي.',product:'تمام، اختار المنتج اللي محتاجه.',quantity:'محتاج كام نسخة؟ اختار الكمية المناسبة من الأسعار المتاحة 👇',job:'تمام، قولّي اسم الشغل اللي هيتطبع.',pdf:'دلوقتي ارفع ملف التصميم PDF أو صورة JPG/PNG عالية الجودة.'};
+    const prompts={subcategory:'حلو 👌 اختار القسم الفرعي.',product:'تمام، اختار المنتج اللي محتاجه.',quantity:'محتاج كام نسخة؟ اختار الكمية المناسبة من الأسعار المتاحة 👇',job:'تمام، قولّي اسم الشغل اللي هيتطبع.',pdf:'تمام يا فندم، فاضل ملف التصميم بصيغة PDF علشان نبعته للمراجعة. ابعته هنا وأنا أكمل معاك 😊'};
     if(prompts[next])setMessages(prev=>[...prev,{from:'bot',text:prompts[next]}])
   }
   const chosenProduct = products.find(p=>String(p.id)===String(draft.productId))
