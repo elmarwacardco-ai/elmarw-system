@@ -142,7 +142,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       if(yes){
         const qty=availableQuantities;
         if(draftStep==='specifications')setDraftStep('quantity');else setChatMode('priceDetails');
-        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'ممتاز 👌 اختار الكمية المناسبة:\\n'+qty.map(n=>n+' نسخة').join('، '):'مفيش أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
+        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'ممتاز 👌 اختار الكمية المناسبة:\n'+qty.map((n,i)=>(i+1)+'. '+n+' نسخة — '+priceTable[n]+' جنيه').join('\n'):'مفيش أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
       }
       if(/^(رجوع|تغيير|غير|لا|لأ)$/i.test(q)){setDraftStep('');setChatMode('priceCategories');setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، اختار قسم أو اكتب اسم منتج تاني.'}]);setQuestion('');return}
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'لو المواصفات مناسبة اكتب «تمام»، أو اكتب «تغيير» لاختيار منتج تاني.'}]);setQuestion('');return;
@@ -234,12 +234,8 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
       setDraft(v=>({...v,productId:String(p.id)}));
       const table=(()=>{try{let x=loggedClient?.type==='VIP'?p.pricesVIP:p.pricesB;return typeof x==='string'?JSON.parse(x):x||{}}catch{return {}}})();
       const qty=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].filter(n=>Number(table[n])>0);
-      if(productSpecifications(p)){
-        if(draftStep==='product')setDraftStep('specifications');else setChatMode('priceSpecifications');
-        setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(p)}]);setQuestion('');return;
-      }
-      if(draftStep==='product')setDraftStep('quantity');else setChatMode('priceDetails');
-      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:qty.length?'اختار الكمية واكتب عدد النسخ:\n'+qty.map((n,i)=>(i+1)+'. '+n+' نسخة').join('\n'):'المنتج ده مفيش له أسعار متاحة لفئة حسابك حاليًا.'}]);setQuestion('');return;
+      if(draftStep==='product')setDraftStep('specifications');else setChatMode('priceSpecifications');
+      setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:describeProduct(p)}]);setQuestion('');return;
     }
     if(draftStep==='quantity'||chatMode==='priceDetails'){
       const digitText=q.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
