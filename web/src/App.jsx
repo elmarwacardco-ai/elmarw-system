@@ -337,7 +337,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
         </div>}
       {loggedClient && !draftStep && <div style={{padding:'8px 12px',fontSize:13}}>
         
-        {chatMode==='priceDetails' && <p>اكتب الكمية اللي محتاجها: {availableQuantities.map(q=>q+' نسخة = '+priceTable[q]+' جنيه').join('، ')||'مفيش أسعار متاحة'}</p>}
+        {chatMode==='priceDetails' && <p>تحب تطبع كام نسخة؟ اكتب الكمية أو رقم الاختيار.</p>}
       </div>}
       {draftStep && <div style={{padding:'10px 12px',fontSize:13}}>
         <strong>🧾 مسودة طلب طباعة — {draftStep==='preview'?'مراجعة البيانات':'الخطوة التالية'}</strong>
