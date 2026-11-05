@@ -34,6 +34,23 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
   const [messages, setMessages] = useState([{ from: 'bot', text: 'أهلاً بيك في المروة للطباعة 👋 هساعدك خطوة بخطوة في الأسعار والطلبات.' }])
   const greetedCustomer=useRef('')
   useEffect(()=>{if(!open||!loggedClient)return;const identity=String(loggedClient.id||loggedClient.phone||loggedClient.name||'');if(greetedCustomer.current===identity)return;greetedCustomer.current=identity;setMessages(prev=>prev.length===1 && prev[0]?.from==='bot' ? [{from:'bot',text:'أهلاً وسهلاً يا '+(loggedClient.name||'عميل المروة')+' 🌟 نورت المروة للطباعة! تحب تعمل طلب طباعة جديد، تعرف الأسعار، ولا تتابع طلبك؟'}] : prev)},[open,loggedClient?.id,loggedClient?.name,loggedClient?.phone])
+  const [visibleBotText,setVisibleBotText] = useState('')
+  const [botTyping,setBotTyping] = useState(false)
+  const lastMessage=messages[messages.length-1]
+  useEffect(()=>{
+    if(!open||lastMessage?.from!=='bot'){setBotTyping(false);return}
+    const full=String(lastMessage.text||'')
+    let shown=0
+    setVisibleBotText('')
+    setBotTyping(true)
+    const step=Math.max(1,Math.ceil(full.length/65))
+    const timer=setInterval(()=>{
+      shown=Math.min(full.length,shown+step)
+      setVisibleBotText(full.slice(0,shown))
+      if(shown>=full.length){clearInterval(timer);setBotTyping(false)}
+    },24)
+    return()=>clearInterval(timer)
+  },[open,messages])
   const messageListRef = useRef(null)
   useEffect(()=>{if(open && messageListRef.current)messageListRef.current.scrollTop=messageListRef.current.scrollHeight},[messages,open,welcomeStep,chatMode,draftStep,draft.categoryId,draft.subCategoryId,draft.productId])
   const submitDraft = async () => {
@@ -350,7 +367,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     {open && <section className="marwa-chat-dialog" role="dialog" aria-label="مساعد المروة" style={{width:'100%',maxWidth:760,height:'100%',maxHeight:'100dvh',background:'white',borderRadius:0,boxShadow:'0 12px 42px #0f172a44',display:'flex',flexDirection:'column',overflow:'hidden',marginBottom:0,border:'none'}}>
       <header className="marwa-chat-header" style={{background:'#1e3a8a',color:'white',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}><div className="marwa-chat-title"><span className="marwa-chat-logo">💬</span><div><strong>مساعد المروة</strong><small>خدمة العملاء • معاك خطوة بخطوة</small></div></div><button type="button" onClick={()=>setOpen(false)} aria-label="الرجوع للموقع" className="marwa-chat-close" style={{background:'transparent',border:0,color:'white',fontSize:22,cursor:'pointer'}}>← رجوع للموقع</button></header>
       <div className="marwa-chat-messages" ref={messageListRef} aria-live="polite" style={{flex:1,minHeight:0,overflowY:'auto',padding:12,display:'flex',flexDirection:'column',gap:10}}>
-        {messages.map((m,i)=><div className={'marwa-chat-bubble '+m.from} key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.text}</div>)}
+        {messages.map((m,i)=><div className={'marwa-chat-bubble '+m.from} key={i} style={{alignSelf:m.from==='user'?'flex-start':'flex-end',background:m.from==='user'?'#dbeafe':'#f1f5f9',padding:'9px 11px',borderRadius:12,maxWidth:'92%',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{m.from==='bot'&&i===messages.length-1&&botTyping?visibleBotText+' ▍':m.text}</div>)}
         {!loggedClient && welcomeStep==='ask' && <div style={{alignSelf:'stretch',padding:10,border:'1px solid #bfdbfe',borderRadius:12,background:'#eff6ff',fontSize:13}}>
           <strong>👋 أهلاً بيك! هل دي أول مرة تتعامل مع المروة؟</strong>
           <p style={{margin:'5px 0 9px'}}>اختار علشان نكمل معاك ونعرض الأسعار المناسبة.</p>
