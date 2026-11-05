@@ -43,12 +43,12 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     let shown=0
     setVisibleBotText('')
     setBotTyping(true)
-    const step=Math.max(1,Math.ceil(full.length/65))
+    const step=1
     const timer=setInterval(()=>{
       shown=Math.min(full.length,shown+step)
       setVisibleBotText(full.slice(0,shown))
       if(shown>=full.length){clearInterval(timer);setBotTyping(false)}
-    },24)
+    },55)
     return()=>clearInterval(timer)
   },[open,messages])
   const messageListRef = useRef(null)
