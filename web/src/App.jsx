@@ -257,7 +257,7 @@ function SiteChatAssistant({ products, categories, subCategories, loggedClient, 
     }
     if(draftStep==='confirm'){
       setQuestion('')
-      if(/^(ايوه|أيوه|اه|آه|نعم|تمام|موافق|اكمل|كمل|yes|ok)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تمام، اكتب اسم الشغل علشان نجهز ملف الطباعة.'}]);setDraftStep('job');return}
+      if(/^(ايوه|أيوه|اه|آه|نعم|تمام|موافق|اكمل|كمل|yes|ok)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'برجاء كتابة اسم الشغل.'}]);setDraftStep('job');return}
       if(/^(لا|لأ|غير|تغيير|no)/i.test(normalized)){setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'ولا يهمك، اختار الكمية المناسبة تاني.'}]);setDraftStep('quantity');return}
       setMessages(prev=>[...prev,{from:'user',text:q},{from:'bot',text:'تحب نكمل الطلب بالمنتج والكمية دول؟ اختار أيوه أو تغيير الكمية.'}]);return
     }
